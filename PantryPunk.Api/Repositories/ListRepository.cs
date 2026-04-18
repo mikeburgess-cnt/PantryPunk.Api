@@ -6,14 +6,16 @@ namespace PantryPunk.Api.Repositories;
 
 public class ListRepository
 {
-    private readonly Container _container;
+    private readonly Container _container = null!;
+
+    protected ListRepository() { }
 
     public ListRepository(CosmosDbContext context)
     {
         _container = context.ShoppingLists;
     }
 
-    public async Task<ShoppingListDocument?> GetByOwnerUserIdAsync(string ownerUserId)
+    public virtual async Task<ShoppingListDocument?> GetByOwnerUserIdAsync(string ownerUserId)
     {
         var query = new QueryDefinition("SELECT * FROM c WHERE c.ownerUserId = @ownerUserId")
             .WithParameter("@ownerUserId", ownerUserId);
@@ -28,13 +30,13 @@ public class ListRepository
         return null;
     }
 
-    public async Task<ShoppingListDocument> CreateAsync(ShoppingListDocument document)
+    public virtual async Task<ShoppingListDocument> CreateAsync(ShoppingListDocument document)
     {
         var response = await _container.CreateItemAsync(document, new PartitionKey(document.ListId));
         return response.Resource;
     }
 
-    public async Task<ShoppingListDocument> ReplaceAsync(ShoppingListDocument document)
+    public virtual async Task<ShoppingListDocument> ReplaceAsync(ShoppingListDocument document)
     {
         var response = await _container.ReplaceItemAsync(document, document.Id, new PartitionKey(document.ListId));
         return response.Resource;

@@ -6,14 +6,16 @@ namespace PantryPunk.Api.Repositories;
 
 public class ShareRepository
 {
-    private readonly Container _container;
+    private readonly Container _container = null!;
+
+    protected ShareRepository() { }
 
     public ShareRepository(CosmosDbContext context)
     {
         _container = context.ShareCodes;
     }
 
-    public async Task<ShareCodeDocument?> GetByCodeAsync(string code)
+    public virtual async Task<ShareCodeDocument?> GetByCodeAsync(string code)
     {
         // Partition key is /code but id is a GUID — query within the partition
         var query = new QueryDefinition("SELECT * FROM c WHERE c.code = @code")
@@ -33,19 +35,19 @@ public class ShareRepository
         return null;
     }
 
-    public async Task<ShareCodeDocument> CreateAsync(ShareCodeDocument document)
+    public virtual async Task<ShareCodeDocument> CreateAsync(ShareCodeDocument document)
     {
         var response = await _container.CreateItemAsync(document, new PartitionKey(document.Code));
         return response.Resource;
     }
 
-    public async Task<ShareCodeDocument> ReplaceAsync(ShareCodeDocument document)
+    public virtual async Task<ShareCodeDocument> ReplaceAsync(ShareCodeDocument document)
     {
         var response = await _container.ReplaceItemAsync(document, document.Id, new PartitionKey(document.Code));
         return response.Resource;
     }
 
-    public async Task<List<ShareCodeDocument>> GetByOwnerUserIdAsync(string ownerUserId, bool excludeRevoked = true)
+    public virtual async Task<List<ShareCodeDocument>> GetByOwnerUserIdAsync(string ownerUserId, bool excludeRevoked = true)
     {
         var queryText = excludeRevoked
             ? "SELECT * FROM c WHERE c.ownerUserId = @ownerUserId AND (NOT IS_DEFINED(c.revokedAt) OR c.revokedAt = null) ORDER BY c.createdAt ASC"
@@ -66,7 +68,7 @@ public class ShareRepository
         return results;
     }
 
-    public async Task<ShareCodeDocument?> GetByIdAndOwnerAsync(string shareId, string ownerUserId)
+    public virtual async Task<ShareCodeDocument?> GetByIdAndOwnerAsync(string shareId, string ownerUserId)
     {
         var query = new QueryDefinition("SELECT * FROM c WHERE c.id = @shareId AND c.ownerUserId = @ownerUserId")
             .WithParameter("@shareId", shareId)
@@ -82,7 +84,7 @@ public class ShareRepository
         return null;
     }
 
-    public async Task<bool> ActiveCodeExistsAsync(string code)
+    public virtual async Task<bool> ActiveCodeExistsAsync(string code)
     {
         var query = new QueryDefinition(
             "SELECT VALUE COUNT(1) FROM c WHERE c.code = @code AND (NOT IS_DEFINED(c.revokedAt) OR c.revokedAt = null) AND c.expiresAt > @now")

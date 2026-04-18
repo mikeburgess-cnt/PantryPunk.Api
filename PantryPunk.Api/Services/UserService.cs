@@ -18,7 +18,7 @@ public class UserService
         _logger = logger;
     }
 
-    public async Task<UserProfileResponse> UpsertProfileAsync(string userId, UpdateProfileRequest request)
+    public virtual async Task<UserProfileResponse> UpsertProfileAsync(string userId, UpdateProfileRequest request)
     {
         var displayName = request.DisplayName.Trim();
         var now = DateTime.UtcNow;
@@ -65,13 +65,13 @@ public class UserService
         return MapToResponse(document);
     }
 
-    public async Task<UserProfileResponse?> GetProfileAsync(string userId)
+    public virtual async Task<UserProfileResponse?> GetProfileAsync(string userId)
     {
         var document = await _userRepository.GetByIdAsync(userId);
         return document == null ? null : MapToResponse(document);
     }
 
-    public async Task<UserProfileResponse?> UpdateSubscriptionAsync(string userId, UpdateSubscriptionRequest request)
+    public virtual async Task<UserProfileResponse?> UpdateSubscriptionAsync(string userId, UpdateSubscriptionRequest request)
     {
         var document = await _userRepository.GetByIdAsync(userId);
         if (document == null) return null;
@@ -86,17 +86,17 @@ public class UserService
         return MapToResponse(document);
     }
 
-    public async Task<UserDocument?> GetDocumentAsync(string userId)
+    public virtual async Task<UserDocument?> GetDocumentAsync(string userId)
     {
         return await _userRepository.GetByIdAsync(userId);
     }
 
-    public async Task UpdateDocumentAsync(UserDocument document)
+    public virtual async Task UpdateDocumentAsync(UserDocument document)
     {
         await _userRepository.UpsertAsync(document);
     }
 
-    public async Task RequireSubscriberAsync(string userId)
+    public virtual async Task RequireSubscriberAsync(string userId)
     {
         var document = await _userRepository.GetByIdAsync(userId);
         if (document == null || !document.IsSubscriber)

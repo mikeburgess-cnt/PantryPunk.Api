@@ -6,14 +6,16 @@ namespace PantryPunk.Api.Repositories;
 
 public class UserRepository
 {
-    private readonly Container _container;
+    private readonly Container _container = null!;
+
+    protected UserRepository() { }
 
     public UserRepository(CosmosDbContext context)
     {
         _container = context.Users;
     }
 
-    public async Task<UserDocument?> GetByIdAsync(string userId)
+    public virtual async Task<UserDocument?> GetByIdAsync(string userId)
     {
         try
         {
@@ -26,7 +28,7 @@ public class UserRepository
         }
     }
 
-    public async Task<UserDocument> UpsertAsync(UserDocument document)
+    public virtual async Task<UserDocument> UpsertAsync(UserDocument document)
     {
         var response = await _container.UpsertItemAsync(document, new PartitionKey(document.UserId));
         return response.Resource;
