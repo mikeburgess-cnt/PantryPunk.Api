@@ -1,0 +1,394 @@
+{
+	"info": {
+		"name": "PantryPunk API",
+		"description": "API collection for the PantryPunk backend",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "https://localhost:7172",
+			"type": "string"
+		},
+		{
+			"key": "authToken",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "shareCode",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "itemId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "shareId",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{authToken}}",
+				"type": "string"
+			}
+		]
+	},
+	"item": [
+		{
+			"name": "User",
+			"item": [
+				{
+					"name": "Upsert Profile",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"displayName\": \"Mike\",\n  \"email\": \"mike@example.com\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/users/profile",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "users", "profile"]
+						},
+						"description": "Creates or updates the user's profile. Called on first sign-in and when display name changes."
+					}
+				},
+				{
+					"name": "Get Profile",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/users/profile",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "users", "profile"]
+						},
+						"description": "Returns the current user's profile. Returns 404 if not yet registered."
+					}
+				},
+				{
+					"name": "Update Subscription",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"isSubscriber\": true\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/users/subscription",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "users", "subscription"]
+						},
+						"description": "Syncs subscription status after a RevenueCat restore purchase."
+					}
+				}
+			],
+			"description": "User profile and subscription management. All endpoints require Auth0 JWT."
+		},
+		{
+			"name": "Shopping List",
+			"item": [
+				{
+					"name": "Get List",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/shopping-list",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "shopping-list"]
+						},
+						"description": "Returns the full shopping list for the authenticated user or guest."
+					}
+				},
+				{
+					"name": "Add Item",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"description\": \"Bananas\",\n  \"quantity\": null,\n  \"notes\": null\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/shopping-list/items",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "shopping-list", "items"]
+						},
+						"description": "Adds a new item to the shopping list. addedBy is resolved server-side."
+					}
+				},
+				{
+					"name": "Update Item",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"description\": \"Bananas\",\n  \"quantity\": 4,\n  \"notes\": \"Ripe ones\",\n  \"photoUrl\": null\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/shopping-list/items/{{itemId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "shopping-list", "items", "{{itemId}}"]
+						},
+						"description": "Updates an existing item on the shopping list."
+					}
+				},
+				{
+					"name": "Delete Item",
+					"request": {
+						"method": "DELETE",
+						"url": {
+							"raw": "{{baseUrl}}/api/shopping-list/items/{{itemId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "shopping-list", "items", "{{itemId}}"]
+						},
+						"description": "Deletes an item from the shopping list."
+					}
+				}
+			],
+			"description": "Shopping list CRUD operations. Supports Auth0 JWT or X-Share-Code authentication."
+		},
+		{
+			"name": "Image Recognition",
+			"item": [
+				{
+					"name": "Upload Photo",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"type": "file",
+									"src": "",
+									"description": "JPEG image of a grocery item (max 2MB)"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/list/items/photo",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "list", "items", "photo"]
+						},
+						"description": "Uploads a photo, recognises the grocery item via Claude API, and adds it to the shopping list. Returns the created item with a confidence score."
+					}
+				}
+			],
+			"description": "AI-powered image recognition. Rate limited. Supports Auth0 JWT or X-Share-Code authentication."
+		},
+		{
+			"name": "Voice Recognition",
+			"item": [
+				{
+					"name": "Upload Voice",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "audio",
+									"type": "file",
+									"src": "",
+									"description": "m4a/mp4 audio recording (max 2MB, ~3 min)"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/list/items/voice",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "list", "items", "voice"]
+						},
+						"description": "Transcribes audio via Azure AI Speech, extracts shopping items via Claude API, and adds all recognised items to the list."
+					}
+				}
+			],
+			"description": "AI-powered voice recognition. Rate limited. Supports Auth0 JWT or X-Share-Code authentication."
+		},
+		{
+			"name": "Sharing",
+			"item": [
+				{
+					"name": "Generate Share Code",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"recipientName\": \"Natalie\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/share/generate-code",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "share", "generate-code"]
+						},
+						"description": "Generates a unique 6-character share code. Requires Auth0 JWT and active subscription."
+					}
+				},
+				{
+					"name": "Confirm Share Code",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"{{shareCode}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/share/confirm-code",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "share", "confirm-code"]
+						},
+						"description": "Public endpoint. Non-subscriber guest submits a code to join a shared list. Returns 410 if expired or revoked."
+					}
+				},
+				{
+					"name": "Get Share Codes",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/share",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "share"]
+						},
+						"description": "Returns all share codes created by the subscriber. Excludes revoked codes."
+					}
+				},
+				{
+					"name": "Revoke Share Code",
+					"request": {
+						"method": "DELETE",
+						"url": {
+							"raw": "{{baseUrl}}/api/share/{{shareId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "share", "{{shareId}}"]
+						},
+						"description": "Revokes a share code. The guest loses list access on their next API call."
+					}
+				}
+			],
+			"description": "Share code management for list sharing. Most endpoints require Auth0 JWT; confirm-code is public."
+		},
+		{
+			"name": "Features",
+			"item": [
+				{
+					"name": "Get Feature Flags",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/features",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "features"]
+						},
+						"description": "Returns the current set of feature flags for the authenticated user. Requires Auth0 JWT."
+					}
+				}
+			],
+			"description": "Feature flag evaluation. Requires Auth0 JWT."
+		},
+		{
+			"name": "Webhooks",
+			"item": [
+				{
+					"name": "RevenueCat Webhook",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-RevenueCat-Signature",
+								"value": "",
+								"description": "HMAC-SHA256 signature of the request body"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"event\": {\n    \"type\": \"INITIAL_PURCHASE\",\n    \"app_user_id\": \"auth0|abc123\",\n    \"expiration_at_ms\": 1744531200000\n  }\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/webhooks/revenuecat",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "webhooks", "revenuecat"]
+						},
+						"description": "Receives subscription lifecycle events from RevenueCat. Authenticated via X-RevenueCat-Signature header, not Auth0."
+					}
+				}
+			],
+			"description": "External webhook receivers. Not protected by Auth0."
+		},
+		{
+			"name": "Health",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/health",
+							"host": ["{{baseUrl}}"],
+							"path": ["health"]
+						},
+						"description": "Health check endpoint for App Service monitoring."
+					}
+				}
+			],
+			"description": "Infrastructure health check endpoint."
+		}
+	]
+}
