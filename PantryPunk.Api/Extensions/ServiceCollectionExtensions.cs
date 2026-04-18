@@ -79,6 +79,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ListService>();
         services.AddScoped<ShareService>();
         services.AddScoped<BlobStorageService>();
+        services.AddScoped<ImageRecognitionService>();
+        services.AddScoped<VoiceRecognitionService>();
+        services.AddScoped<FeatureFlagService>();
         return services;
     }
 }

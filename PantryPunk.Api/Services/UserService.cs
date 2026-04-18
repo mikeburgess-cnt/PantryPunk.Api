@@ -91,6 +91,11 @@ public class UserService
         return await _userRepository.GetByIdAsync(userId);
     }
 
+    public async Task UpdateDocumentAsync(UserDocument document)
+    {
+        await _userRepository.UpsertAsync(document);
+    }
+
     public async Task RequireSubscriberAsync(string userId)
     {
         var document = await _userRepository.GetByIdAsync(userId);

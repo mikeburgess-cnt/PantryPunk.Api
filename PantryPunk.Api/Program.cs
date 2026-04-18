@@ -39,6 +39,10 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddCosmosDb(builder.Configuration);
 builder.Services.AddBlobStorage(builder.Configuration);
 
+// HTTP clients for external APIs
+builder.Services.AddHttpClient("Claude");
+builder.Services.AddHttpClient("AzureSpeech");
+
 // Application services
 builder.Services.AddRepositories();
 builder.Services.AddAppServices();
@@ -79,6 +83,10 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/openapi/v1.json", "PantryPunk API");
+    });
 }
 
 app.UseHttpsRedirection();

@@ -84,6 +84,30 @@ public class ListService
         return true;
     }
 
+    public async Task<ShoppingItemResponse?> AddItemDirectAsync(string userId, ShoppingItemDocument itemDoc)
+    {
+        var list = await _listRepository.GetByOwnerUserIdAsync(userId);
+        if (list == null) return null;
+
+        list.Items.Add(itemDoc);
+        list.UpdatedAt = itemDoc.UpdatedAt;
+        await _listRepository.ReplaceAsync(list);
+
+        return MapItemToResponse(itemDoc);
+    }
+
+    public async Task<List<ShoppingItemResponse>?> AddItemsDirectAsync(string userId, List<ShoppingItemDocument> items)
+    {
+        var list = await _listRepository.GetByOwnerUserIdAsync(userId);
+        if (list == null) return null;
+
+        list.Items.AddRange(items);
+        list.UpdatedAt = DateTime.UtcNow;
+        await _listRepository.ReplaceAsync(list);
+
+        return items.Select(MapItemToResponse).ToList();
+    }
+
     public async Task<string?> ResolveAddedByAsync(string userId, string? recipientName)
     {
         if (recipientName != null)

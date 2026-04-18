@@ -1,0 +1,59 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using PantryPunk.Api.Extensions;
+using PantryPunk.Api.Models.Requests;
+using PantryPunk.Api.Models.Responses;
+using PantryPunk.Api.Services;
+
+namespace PantryPunk.Api.Controllers;
+
+[ApiController]
+[Route("api/users")]
+[Authorize(Policy = "RegisteredUser")]
+public class UserController : ControllerBase
+{
+    private readonly UserService _userService;
+
+    public UserController(UserService userService)
+    {
+        _userService = userService;
+    }
+
+    [HttpPost("profile")]
+    public async Task<IActionResult> UpsertProfile([FromBody] UpdateProfileRequest request)
+    {
+        var displayName = request.DisplayName?.Trim();
+        if (string.IsNullOrEmpty(displayName))
+            return BadRequest(new ErrorResponse { Error = "Display name is required." });
+
+        request.DisplayName = displayName;
+
+        var userId = User.GetUserId();
+        var result = await _userService.UpsertProfileAsync(userId, request);
+        return Ok(result);
+    }
+
+    [HttpGet("profile")]
+    public async Task<IActionResult> GetProfile()
+    {
+        var userId = User.GetUserId();
+        var result = await _userService.GetProfileAsync(userId);
+
+        if (result == null)
+            return NotFound(new ErrorResponse { Error = "User not found." });
+
+        return Ok(result);
+    }
+
+    [HttpPost("subscription")]
+    public async Task<IActionResult> UpdateSubscription([FromBody] UpdateSubscriptionRequest request)
+    {
+        var userId = User.GetUserId();
+        var result = await _userService.UpdateSubscriptionAsync(userId, request);
+
+        if (result == null)
+            return NotFound(new ErrorResponse { Error = "User not found." });
+
+        return Ok(result);
+    }
+}
