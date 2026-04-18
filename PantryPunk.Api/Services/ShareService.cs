@@ -29,7 +29,7 @@ public class ShareService
         _configuration = configuration;
     }
 
-    public async Task<ShareCodeResponse> GenerateCodeAsync(string userId, GenerateShareCodeRequest request)
+    public async Task<GenerateShareCodeResponse> GenerateCodeAsync(string userId, GenerateShareCodeRequest request)
     {
         await _userService.RequireSubscriberAsync(userId);
 
@@ -65,7 +65,7 @@ public class ShareService
 
         await _shareRepository.CreateAsync(document);
 
-        return MapToResponse(document);
+        return MapToGenerateResponse(document);
     }
 
     public async Task<(bool success, string? recipientName, string? error)> ConfirmCodeAsync(ConfirmShareCodeRequest request)
@@ -95,7 +95,7 @@ public class ShareService
     public async Task<List<ShareCodeResponse>> GetShareCodesAsync(string userId)
     {
         var documents = await _shareRepository.GetByOwnerUserIdAsync(userId);
-        return documents.Select(MapToResponse).ToList();
+        return documents.Select(MapToListResponse).ToList();
     }
 
     public async Task<bool> RevokeAsync(string shareId, string userId)
@@ -119,7 +119,19 @@ public class ShareService
         });
     }
 
-    private static ShareCodeResponse MapToResponse(ShareCodeDocument document)
+    private static GenerateShareCodeResponse MapToGenerateResponse(ShareCodeDocument document)
+    {
+        return new GenerateShareCodeResponse
+        {
+            ShareId = document.Id,
+            Code = document.Code,
+            RecipientName = document.RecipientName,
+            Confirmed = document.Confirmed,
+            ExpiresAt = document.ExpiresAt
+        };
+    }
+
+    private static ShareCodeResponse MapToListResponse(ShareCodeDocument document)
     {
         return new ShareCodeResponse
         {

@@ -15,18 +15,7 @@ public class ShareRepository
 
     public async Task<ShareCodeDocument?> GetByCodeAsync(string code)
     {
-        try
-        {
-            var response = await _container.ReadItemAsync<ShareCodeDocument>(
-                code,
-                new PartitionKey(code));
-            return response.Resource;
-        }
-        catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
-        {
-            // Partition key is /code but id is a GUID — need a query instead
-        }
-
+        // Partition key is /code but id is a GUID — query within the partition
         var query = new QueryDefinition("SELECT * FROM c WHERE c.code = @code")
             .WithParameter("@code", code);
 
@@ -59,7 +48,7 @@ public class ShareRepository
     public async Task<List<ShareCodeDocument>> GetByOwnerUserIdAsync(string ownerUserId, bool excludeRevoked = true)
     {
         var queryText = excludeRevoked
-            ? "SELECT * FROM c WHERE c.ownerUserId = @ownerUserId AND NOT IS_DEFINED(c.revokedAt) OR c.revokedAt = null ORDER BY c.createdAt ASC"
+            ? "SELECT * FROM c WHERE c.ownerUserId = @ownerUserId AND (NOT IS_DEFINED(c.revokedAt) OR c.revokedAt = null) ORDER BY c.createdAt ASC"
             : "SELECT * FROM c WHERE c.ownerUserId = @ownerUserId ORDER BY c.createdAt ASC";
 
         var query = new QueryDefinition(queryText)
