@@ -76,7 +76,6 @@ builder.Services.AddRateLimiter(options =>
 // Kestrel max request body size (2MB)
 builder.WebHost.ConfigureKestrel(options =>
     options.Limits.MaxRequestBodySize = 2 * 1024 * 1024);
-
 var app = builder.Build();
 
 // Middleware pipeline order matters
@@ -102,6 +101,10 @@ if (!string.IsNullOrEmpty(builder.Configuration["AzureAppConfiguration:Endpoint"
 
 app.UseAuthentication();
 app.UseMiddleware<ShareCodeAuthMiddleware>();
+if (app.Environment.IsDevelopment())
+{
+    app.UseMiddleware<DevAuthMiddleware>();
+}
 app.UseAuthorization();
 app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseRateLimiter();
