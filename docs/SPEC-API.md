@@ -302,12 +302,12 @@ Endpoints that require subscriber status (e.g. `POST /api/share/generate-code`) 
 |---|---|---|
 | `POST /api/users/profile` | Auth0 JWT | First sign-in profile creation |
 | `GET /api/users/profile` | Auth0 JWT | |
-| `GET /api/list` | JWT or Share Code | |
-| `POST /api/list/items` | JWT or Share Code | |
-| `PUT /api/list/items/:id` | JWT or Share Code | |
-| `DELETE /api/list/items/:id` | JWT or Share Code | |
-| `POST /api/list/items/photo` | JWT or Share Code | Upload photo, recognise item, add to list |
-| `POST /api/list/items/voice` | JWT or Share Code | Transcribe audio, extract items, add to list |
+| `GET /api/shopping-list` | JWT or Share Code | |
+| `POST /api/shopping-list/items` | JWT or Share Code | |
+| `PUT /api/shopping-list/items/:id` | JWT or Share Code | |
+| `DELETE /api/shopping-list/items/:id` | JWT or Share Code | |
+| `POST /api/shopping-list/items/photo` | JWT or Share Code | Upload photo, recognise item, add to list |
+| `POST /api/shopping-list/items/voice` | JWT or Share Code | Transcribe audio, extract items, add to list |
 | `POST /api/share/generate-code` | JWT + isSubscriber | |
 | `POST /api/share/confirm-code` | None | Public endpoint |
 | `GET /api/share` | JWT + isSubscriber | Replaces polling status endpoint |
@@ -567,7 +567,7 @@ Creates or updates the user's profile. Called on first sign-in and when the disp
 **Behaviour:**
 - Extract `userId` from Auth0 `sub` claim.
 - Upsert the `Users` document (create if first sign-in, update if returning).
-- If creating: also attempt to create a new empty `ShoppingLists` document for this user. If this write fails, do not return an error to the client — instead, handle the missing list gracefully: `GET /api/list` checks for the list document and creates an empty one on the fly if it does not exist. This avoids a partial failure leaving the user unable to use the app.
+- If creating: also attempt to create a new empty `ShoppingLists` document for this user. If this write fails, do not return an error to the client — instead, handle the missing list gracefully: `GET /api/shopping-list` checks for the list document and creates an empty one on the fly if it does not exist. This avoids a partial failure leaving the user unable to use the app.
 - Trim `displayName` before saving. Return `400` if trimmed value is empty.
 
 **Response `200 OK`:**
@@ -621,7 +621,7 @@ Syncs subscription status after a RevenueCat restore purchase.
 
 > **Authentication note for all list endpoints:** `userId` resolution is handled by authentication middleware before requests reach controllers. For JWT requests, `JwtBearerAuthentication` extracts `userId` from the `sub` claim. For share code requests, `ShareCodeAuthMiddleware` validates the code (checks not expired, not revoked), resolves `ownerUserId`, and injects it as a synthetic claim. Controllers read `userId` from the claims principal — they do not repeat this validation.
 
-#### `GET /api/list`
+#### `GET /api/shopping-list`
 
 Returns the full shopping list for the authenticated user or guest. Called by the app on launch, on foreground resume, and on every 15-second polling tick (when confirmed shared users exist). The app merges the response into its local Hive cache using the List Merge Strategy defined in the frontend spec.
 
@@ -659,7 +659,7 @@ Returns the full shopping list for the authenticated user or guest. Called by th
 
 ---
 
-#### `POST /api/list/items`
+#### `POST /api/shopping-list/items`
 
 Adds a new item to the shopping list.
 
@@ -693,7 +693,7 @@ Adds a new item to the shopping list.
 
 ---
 
-#### `PUT /api/list/items/:itemId`
+#### `PUT /api/shopping-list/items/:itemId`
 
 Updates an existing item.
 
@@ -725,7 +725,7 @@ Updates an existing item.
 
 ---
 
-#### `DELETE /api/list/items/:itemId`
+#### `DELETE /api/shopping-list/items/:itemId`
 
 Deletes an item from the list.
 
@@ -744,7 +744,7 @@ Deletes an item from the list.
 
 ---
 
-#### `POST /api/list/items/photo`
+#### `POST /api/shopping-list/items/photo`
 
 Uploads a photo to Azure Blob Storage, sends it to the Claude API for recognition, adds the recognised item to the shopping list, and returns the created item with a confidence score. This is a single combined operation — the app makes one call and gets back a fully populated shopping list item.
 
@@ -804,7 +804,7 @@ Uploads a photo to Azure Blob Storage, sends it to the Claude API for recognitio
 
 ### AI — Voice Recognition
 
-#### `POST /api/list/items/voice`
+#### `POST /api/shopping-list/items/voice`
 
 Accepts an audio recording, transcribes it via Azure AI Speech, extracts shopping items via the Claude API, adds all recognised items to the shopping list, and returns the created items. This is a single combined operation — the app makes one call and gets back fully populated shopping list items ready to display.
 
@@ -1349,7 +1349,7 @@ For local development, feature flags and configuration can be overridden in `app
 
 ### Photo Lifecycle
 
-- Photos are uploaded when `POST /api/list/items/photo` is called.
+- Photos are uploaded when `POST /api/shopping-list/items/photo` is called.
 - When an item is deleted, the associated blob is **not** deleted immediately — implement a scheduled cleanup job as a future task to remove orphaned blobs.
 - Photo URLs are permanent once issued (no SAS tokens needed for public read containers).
 
@@ -1440,7 +1440,7 @@ _logger.LogInformation(
 
 - **HTTPS only** — enforced at App Service level and via `app.UseHttpsRedirection()`
 - **CORS** — restrict to the app's bundle identifier / known origins only. Do not use wildcard `*` in production.
-- **Rate limiting** — apply rate limiting middleware (`Microsoft.AspNetCore.RateLimiting`) on AI endpoints (`/api/list/items/photo`, `/api/list/items/voice`) to protect Claude API costs. Suggested: 30 requests per user per minute.
+- **Rate limiting** — apply rate limiting middleware (`Microsoft.AspNetCore.RateLimiting`) on AI endpoints (`/api/shopping-list/items/photo`, `/api/shopping-list/items/voice`) to protect Claude API costs. Suggested: 30 requests per user per minute.
 - **Input validation** — use Data Annotations or FluentValidation on all request DTOs. Reject requests with oversized payloads.
 - **Max upload size** — enforce a 2MB limit on photo and audio file uploads in `Program.cs`:
   ```csharp

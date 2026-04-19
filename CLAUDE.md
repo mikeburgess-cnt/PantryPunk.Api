@@ -56,8 +56,8 @@ All source lives under `PantryPunk.Api/`:
 - **addedBy resolution:** Never accepted from client. For JWT users, read from `UserDocument.DisplayName`. For guests, read from `RecipientName` claim injected by `ShareCodeAuthMiddleware`.
 - **Subscriber checks:** `isSubscriber` is NOT in the JWT — it lives in Cosmos DB `UserDocument`. Service layer loads the document and checks, not a policy claim.
 - **Share codes:** 6-char uppercase alphanumeric, partition key is `/code`. Soft-deleted via `revokedAt` (never hard-delete). Expire after 24 hours if unconfirmed; valid indefinitely once confirmed.
-- **Photo upload + recognition:** Single endpoint (`POST /api/list/items/photo`) uploads blob, calls Claude, creates item — all in one request. Low confidence items are still created (not 422).
-- **Voice flow:** Audio → Azure AI Speech (transcription) → Claude (item extraction) → items created. Single endpoint (`POST /api/list/items/voice`).
+- **Photo upload + recognition:** Single endpoint (`POST /api/shopping-list/items/photo`) uploads blob, calls Claude, creates item — all in one request. Low confidence items are still created (not 422).
+- **Voice flow:** Audio → Azure AI Speech (transcription) → Claude (item extraction) → items created. Single endpoint (`POST /api/shopping-list/items/voice`).
 
 ## Cosmos DB Containers
 
