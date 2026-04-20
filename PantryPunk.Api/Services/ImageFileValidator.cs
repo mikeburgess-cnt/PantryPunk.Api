@@ -29,7 +29,7 @@ public sealed record ImageValidationResult
 
 public sealed class ImageFileValidator
 {
-    private const int MaxBytes = 2 * 1024 * 1024;
+    private const int MaxBytes = 3 * 1024 * 1024;
     private const int MaxDimension = 8192;
 
     private static readonly HashSet<string> AllowedMediaTypes =
@@ -41,7 +41,7 @@ public sealed class ImageFileValidator
             return ImageValidationResult.Fail("No image provided.");
 
         if (file.Length > MaxBytes)
-            return ImageValidationResult.Fail("Image must be under 2MB.");
+            return ImageValidationResult.Fail("Image must be under 3MB.");
 
         if (string.IsNullOrWhiteSpace(file.ContentType) || !AllowedMediaTypes.Contains(file.ContentType))
             return ImageValidationResult.Fail("Unsupported image format.");

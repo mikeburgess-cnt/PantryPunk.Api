@@ -756,7 +756,7 @@ Uploads a photo to Azure Blob Storage, sends it to the Claude API for recognitio
 1. Read `userId` from the claims principal injected by authentication middleware (JWT or `ShareCodeAuthMiddleware`). This is available as `User.FindFirst(ClaimTypes.NameIdentifier)?.Value` — no container lookup is needed here.
 2. Validate the uploaded file via `ImageFileValidator`. All checks below return `400 Bad Request`:
    - File is present and non-empty.
-   - File size does not exceed **2MB**.
+   - File size does not exceed **3MB**.
    - `Content-Type` is one of `image/jpeg`, `image/png`, `image/webp`.
    - The first bytes match the declared `Content-Type`'s magic signature (defends against renamed / disguised files).
    - The bytes decode as a valid image via `SixLabors.ImageSharp.Image.Identify` (defends against malformed / truncated files).
@@ -1456,10 +1456,10 @@ _logger.LogInformation(
 - **CORS** — restrict to the app's bundle identifier / known origins only. Do not use wildcard `*` in production.
 - **Rate limiting** — apply rate limiting middleware (`Microsoft.AspNetCore.RateLimiting`) on AI endpoints (`/api/shopping-list/items/photo`, `/api/shopping-list/items/voice`) to protect Claude API costs. Suggested: 30 requests per user per minute.
 - **Input validation** — use Data Annotations or FluentValidation on all request DTOs. Reject requests with oversized payloads.
-- **Max upload size** — enforce a 2MB limit on photo and audio file uploads in `Program.cs`:
+- **Max upload size** — enforce a 3MB limit on photo uploads (audio still capped at 2MB in the voice controller) via Kestrel in `Program.cs`:
   ```csharp
   builder.WebHost.ConfigureKestrel(options =>
-      options.Limits.MaxRequestBodySize = 2 * 1024 * 1024); // 2MB
+      options.Limits.MaxRequestBodySize = 3 * 1024 * 1024); // 3MB
   ```
 - **Secrets** — all secrets (Cosmos DB connection string, Claude API key, Auth0 credentials, RevenueCat webhook secret) stored in Azure Key Vault. Never committed to source control.
 - **Soft deletes** — share codes use soft delete (`revokedAt`) for audit trail. Do not hard-delete security-relevant documents.

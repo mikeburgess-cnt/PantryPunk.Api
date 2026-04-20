@@ -13,7 +13,7 @@ namespace PantryPunk.Api.Controllers;
 [Authorize]
 public class ImageController : ControllerBase
 {
-    private const int UploadSizeLimit = 2 * 1024 * 1024 + 64 * 1024;
+    private const int UploadSizeLimit = 3 * 1024 * 1024 + 64 * 1024;
 
     private readonly ImageRecognitionService _imageRecognitionService;
     private readonly BlobStorageService _blobStorageService;

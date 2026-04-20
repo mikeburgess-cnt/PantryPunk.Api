@@ -195,7 +195,7 @@
 									"key": "image",
 									"type": "file",
 									"src": "",
-									"description": "JPEG image of a grocery item (max 2MB)."
+									"description": "JPEG image of a grocery item (max 3MB)."
 								}
 							]
 						},
