@@ -940,21 +940,26 @@ Non-subscriber submits a code to join a shared list **and provides their own dis
 - Return `410 Gone` if `revokedAt` is set.
 - If valid and not yet confirmed: set `recipientName = <trimmed request value>`, `confirmed = true`, `confirmedAt = DateTime.UtcNow`. Write the updated document back to the `ShareCodes` container.
 - If valid and already confirmed (idempotent re-confirm): leave the stored `recipientName` intact — first-confirm wins. The new name in the request is ignored.
-- Return `200 OK` with the stored `recipientName` so the app can display it as the guest's name.
+- Return `200 OK` with the full `ShareCodeResponse` (same shape as `GET /api/share` items). The `shareId` field is what the guest passes to `DELETE /api/share/:shareId` to leave the list (self-revoke).
 
 **Response `200 OK`:**
 ```json
 {
-  "success": true,
-  "recipientName": "Natalie"
+  "shareId": "sharecode-uuid",
+  "recipientName": "Natalie",
+  "code": "6Y812C",
+  "confirmed": true,
+  "confirmedAt": "2026-04-11T10:05:00Z",
+  "expiresAt": "2026-04-12T08:00:00Z",
+  "createdAt": "2026-04-11T08:00:00Z"
 }
 ```
 
 **Response `410 Gone`:**
 ```json
 {
-  "success": false,
-  "error": "Invalid, expired, or revoked code"
+  "error": "Invalid, expired, or revoked code",
+  "traceId": "..."
 }
 ```
 

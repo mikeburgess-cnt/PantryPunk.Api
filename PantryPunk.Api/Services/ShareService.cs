@@ -66,19 +66,19 @@ public class ShareService
         return MapToGenerateResponse(document);
     }
 
-    public async Task<(bool success, string? recipientName, string? error)> ConfirmCodeAsync(ConfirmShareCodeRequest request)
+    public async Task<(ShareCodeResponse? response, string? error)> ConfirmCodeAsync(ConfirmShareCodeRequest request)
     {
         var code = request.Code.Trim().ToUpperInvariant();
         var document = await _shareRepository.GetByCodeAsync(code);
 
         if (document == null)
-            return (false, null, "Invalid, expired, or revoked code");
+            return (null, "Invalid, expired, or revoked code");
 
         if (document.RevokedAt.HasValue)
-            return (false, null, "Invalid, expired, or revoked code");
+            return (null, "Invalid, expired, or revoked code");
 
         if (!document.Confirmed && document.ExpiresAt < DateTime.UtcNow)
-            return (false, null, "Invalid, expired, or revoked code");
+            return (null, "Invalid, expired, or revoked code");
 
         if (!document.Confirmed)
         {
@@ -88,7 +88,7 @@ public class ShareService
             await _shareRepository.ReplaceAsync(document);
         }
 
-        return (true, document.RecipientName, null);
+        return (MapToListResponse(document), null);
     }
 
     public async Task<List<ShareCodeResponse>> GetShareCodesAsync(string userId)

@@ -92,11 +92,15 @@ public class ShareServiceTests
         _shareRepo.Setup(r => r.ReplaceAsync(It.IsAny<ShareCodeDocument>()))
             .ReturnsAsync((ShareCodeDocument d) => d);
 
-        var (success, recipientName, error) = await _sut.ConfirmCodeAsync(
+        var (response, error) = await _sut.ConfirmCodeAsync(
             new ConfirmShareCodeRequest { Code = "abc123", RecipientName = "Natalie" }); // lowercased input
 
-        Assert.True(success);
-        Assert.Equal("Natalie", recipientName);
+        Assert.NotNull(response);
+        Assert.Equal("sc-1", response!.ShareId);
+        Assert.Equal("ABC123", response.Code);
+        Assert.Equal("Natalie", response.RecipientName);
+        Assert.True(response.Confirmed);
+        Assert.NotNull(response.ConfirmedAt);
         Assert.Null(error);
         Assert.True(doc.Confirmed);
         Assert.NotNull(doc.ConfirmedAt);
@@ -107,9 +111,9 @@ public class ShareServiceTests
     {
         _shareRepo.Setup(r => r.GetByCodeAsync("XXXXXX")).ReturnsAsync((ShareCodeDocument?)null);
 
-        var (success, _, error) = await _sut.ConfirmCodeAsync(new ConfirmShareCodeRequest { Code = "XXXXXX" });
+        var (response, error) = await _sut.ConfirmCodeAsync(new ConfirmShareCodeRequest { Code = "XXXXXX" });
 
-        Assert.False(success);
+        Assert.Null(response);
         Assert.Equal("Invalid, expired, or revoked code", error);
     }
 
@@ -124,9 +128,9 @@ public class ShareServiceTests
         };
         _shareRepo.Setup(r => r.GetByCodeAsync("ABC123")).ReturnsAsync(doc);
 
-        var (success, _, error) = await _sut.ConfirmCodeAsync(new ConfirmShareCodeRequest { Code = "ABC123" });
+        var (response, error) = await _sut.ConfirmCodeAsync(new ConfirmShareCodeRequest { Code = "ABC123" });
 
-        Assert.False(success);
+        Assert.Null(response);
         Assert.Contains("revoked", error!);
     }
 
@@ -141,9 +145,9 @@ public class ShareServiceTests
         };
         _shareRepo.Setup(r => r.GetByCodeAsync("ABC123")).ReturnsAsync(doc);
 
-        var (success, _, error) = await _sut.ConfirmCodeAsync(new ConfirmShareCodeRequest { Code = "ABC123" });
+        var (response, _) = await _sut.ConfirmCodeAsync(new ConfirmShareCodeRequest { Code = "ABC123" });
 
-        Assert.False(success);
+        Assert.Null(response);
     }
 
     [Fact]
@@ -159,10 +163,11 @@ public class ShareServiceTests
         };
         _shareRepo.Setup(r => r.GetByCodeAsync("ABC123")).ReturnsAsync(doc);
 
-        var (success, recipientName, _) = await _sut.ConfirmCodeAsync(new ConfirmShareCodeRequest { Code = "ABC123" });
+        var (response, _) = await _sut.ConfirmCodeAsync(new ConfirmShareCodeRequest { Code = "ABC123" });
 
-        Assert.True(success);
-        Assert.Equal("Natalie", recipientName);
+        Assert.NotNull(response);
+        Assert.Equal("Natalie", response!.RecipientName);
+        Assert.Equal("sc-1", response.ShareId);
         Assert.Equal(confirmedAt, doc.ConfirmedAt); // not overwritten
         _shareRepo.Verify(r => r.ReplaceAsync(It.IsAny<ShareCodeDocument>()), Times.Never);
     }

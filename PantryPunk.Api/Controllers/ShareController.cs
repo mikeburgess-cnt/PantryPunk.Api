@@ -51,12 +51,12 @@ public class ShareController : ControllerBase
 
         request.RecipientName = trimmedName;
 
-        var (success, recipientName, error) = await _shareService.ConfirmCodeAsync(request);
+        var (response, error) = await _shareService.ConfirmCodeAsync(request);
 
-        if (!success)
-            return StatusCode(410, new { success = false, error });
+        if (response == null)
+            return StatusCode(410, new ErrorResponse { Error = error! });
 
-        return Ok(new { success = true, recipientName });
+        return Ok(response);
     }
 
     [HttpGet]
