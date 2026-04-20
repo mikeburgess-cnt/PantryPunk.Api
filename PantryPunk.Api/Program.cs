@@ -91,7 +91,10 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 // API key validation (temporary — will be replaced by OAuth)
 app.UseMiddleware<ApiKeyMiddleware>();
