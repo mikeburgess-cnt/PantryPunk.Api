@@ -20,6 +20,10 @@ public class ShareController : ControllerBase
 
     [HttpPost("generate-code")]
     [Authorize(Policy = "RegisteredUser")]
+    [ProducesResponseType<GenerateShareCodeResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GenerateCode([FromBody] GenerateShareCodeRequest? request)
     {
         try
@@ -40,6 +44,9 @@ public class ShareController : ControllerBase
 
     [HttpPost("confirm-code")]
     [AllowAnonymous]
+    [ProducesResponseType<ShareCodeResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status410Gone)]
     public async Task<IActionResult> ConfirmCode([FromBody] ConfirmShareCodeRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Code))
@@ -61,13 +68,16 @@ public class ShareController : ControllerBase
 
     [HttpGet]
     [Authorize(Policy = "RegisteredUser")]
+    [ProducesResponseType<SharedUsersResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GetShareCodes()
     {
         try
         {
             var userId = User.GetUserId();
             var result = await _shareService.GetShareCodesAsync(userId);
-            return Ok(new { sharedUsers = result });
+            return Ok(new SharedUsersResponse { SharedUsers = result });
         }
         catch (ForbiddenException ex)
         {
@@ -77,6 +87,10 @@ public class ShareController : ControllerBase
 
     [HttpDelete("{shareId}")]
     [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> RevokeShareCode(string shareId)
     {
         try

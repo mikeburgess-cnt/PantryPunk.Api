@@ -30,6 +30,9 @@ public class WebhookController : ControllerBase
     }
 
     [HttpPost("revenuecat")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> RevenueCat(
         [FromHeader(Name = "X-RevenueCat-Signature")] string? signature)
     {

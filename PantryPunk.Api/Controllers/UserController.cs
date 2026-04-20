@@ -20,6 +20,10 @@ public class UserController : ControllerBase
     }
 
     [HttpPost("profile")]
+    [ProducesResponseType<UserProfileResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> UpsertProfile([FromBody] UpdateProfileRequest request)
     {
         var displayName = request.DisplayName?.Trim();
@@ -34,6 +38,10 @@ public class UserController : ControllerBase
     }
 
     [HttpGet("profile")]
+    [ProducesResponseType<UserProfileResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetProfile()
     {
         var userId = User.GetUserId();
@@ -46,6 +54,10 @@ public class UserController : ControllerBase
     }
 
     [HttpPost("subscription")]
+    [ProducesResponseType<UserProfileResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> UpdateSubscription([FromBody] UpdateSubscriptionRequest request)
     {
         var userId = User.GetUserId();

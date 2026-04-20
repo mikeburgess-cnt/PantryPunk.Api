@@ -20,6 +20,9 @@ public class FeatureController : ControllerBase
     }
 
     [HttpGet]
+    [ProducesResponseType<Dictionary<string, bool>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetFeatures()
     {
         var userId = User.GetUserId();

@@ -20,6 +20,9 @@ public class ShoppingListController : ControllerBase
     }
 
     [HttpGet]
+    [ProducesResponseType<ShoppingListResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GetList()
     {
         var userId = User.GetUserId();
@@ -32,6 +35,10 @@ public class ShoppingListController : ControllerBase
     }
 
     [HttpPost("items")]
+    [ProducesResponseType<ShoppingItemResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> AddItem([FromBody] AddItemRequest request)
     {
         var description = request.Description?.Trim();
@@ -53,6 +60,10 @@ public class ShoppingListController : ControllerBase
     }
 
     [HttpPut("items/{itemId}")]
+    [ProducesResponseType<ShoppingItemResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> UpdateItem(string itemId, [FromBody] UpdateItemRequest request)
     {
         var description = request.Description?.Trim();
@@ -71,6 +82,9 @@ public class ShoppingListController : ControllerBase
     }
 
     [HttpDelete("items/{itemId}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> DeleteItem(string itemId)
     {
         var userId = User.GetUserId();

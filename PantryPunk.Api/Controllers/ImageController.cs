@@ -29,6 +29,12 @@ public class ImageController : ControllerBase
 
     [HttpPost("photo")]
     [EnableRateLimiting("ai")]
+    [ProducesResponseType<ShoppingItemResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> UploadPhoto(IFormFile image)
     {
         if (image == null || image.Length == 0)
