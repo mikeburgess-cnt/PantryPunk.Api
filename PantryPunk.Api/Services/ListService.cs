@@ -132,8 +132,12 @@ public class ListService
         {
             Id = item.Id,
             Description = item.Description,
+            Brand = item.Brand,
+            KnownAs = item.KnownAs,
+            Size = item.Size,
             Quantity = item.Quantity,
             AddedBy = item.AddedBy,
+            AddedByMethod = item.AddedByMethod,
             Notes = item.Notes,
             PhotoUrl = item.PhotoUrl,
             Confidence = item.Confidence,
