@@ -5,6 +5,8 @@ using PantryPunk.Api.Extensions;
 using PantryPunk.Api.Models.Documents;
 using PantryPunk.Api.Models.Responses;
 using PantryPunk.Api.Services;
+using System.Drawing.Drawing2D;
+using System.Security.AccessControl;
 
 namespace PantryPunk.Api.Controllers;
 
@@ -29,6 +31,8 @@ public class ImageController : ControllerBase
 
     [HttpPost("photo")]
     [EnableRateLimiting("ai")]
+    [RequestSizeLimit(3 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 6 * 1024 * 1024)]
     [ProducesResponseType<ShoppingItemResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
@@ -43,7 +47,7 @@ public class ImageController : ControllerBase
         if (image.ContentType != "image/jpeg")
             return BadRequest(new ErrorResponse { Error = "Only JPEG images are accepted." });
 
-        if (image.Length > 2 * 1024 * 1024)
+        if (image.Length > 5 * 1024 * 1024)
             return BadRequest(new ErrorResponse { Error = "Image must be under 2MB." });
 
         var userId = User.GetUserId();
@@ -90,12 +94,22 @@ public class ImageController : ControllerBase
         }
 
         var now = DateTime.UtcNow;
+
+        string description = recognition.KnownAs
+            ?? recognition.Description
+            ?? recognition.Brand
+            ?? string.Empty;
+
         var itemDoc = new ShoppingItemDocument
         {
             Id = Guid.NewGuid().ToString(),
-            Description = recognition.Description,
+            Description = recognition.Description ?? string.Empty,
+            Brand = recognition.Brand,
+            KnownAs= recognition.KnownAs,
             Quantity = recognition.Quantity,
+            Size = recognition.Size,
             AddedBy = addedBy,
+            AddedByMethod = "Photo",
             PhotoUrl = blobUrl,
             Confidence = recognition.Confidence,
             CreatedAt = now,
