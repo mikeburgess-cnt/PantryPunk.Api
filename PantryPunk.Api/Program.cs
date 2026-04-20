@@ -74,9 +74,11 @@ builder.Services.AddRateLimiter(options =>
     });
 });
 
-// Kestrel max request body size (2MB)
+// Kestrel max request body size: 2MB payload + ~64KB multipart overhead.
+// Keeps transport slightly above the 2MB business limit so the validator
+// can return a 400 "under 2MB" rather than Kestrel returning 413 first.
 builder.WebHost.ConfigureKestrel(options =>
-    options.Limits.MaxRequestBodySize = 2 * 1024 * 1024);
+    options.Limits.MaxRequestBodySize = 2 * 1024 * 1024 + 64 * 1024);
 var app = builder.Build();
 
 // Middleware pipeline order matters

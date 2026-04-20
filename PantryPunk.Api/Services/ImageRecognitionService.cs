@@ -107,7 +107,7 @@ public class ImageRecognitionService
         _logger = logger;
     }
 
-    public async Task<ImageRecognitionResult?> RecogniseAsync(byte[] imageBytes)
+    public async Task<ImageRecognitionResult?> RecogniseAsync(byte[] imageBytes, string mediaType)
     {
         var model = _configuration["PantryPunk:Claude:Model"] ?? "claude-sonnet-4-6";
         var maxTokens = _configuration.GetValue("PantryPunk:Claude:MaxTokensImage", 256);
@@ -134,7 +134,7 @@ public class ImageRecognitionService
                             source = new
                             {
                                 type = "base64",
-                                media_type = "image/jpeg",
+                                media_type = mediaType,
                                 data = base64Image
                             }
                         }

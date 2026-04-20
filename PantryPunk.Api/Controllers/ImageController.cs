@@ -5,8 +5,6 @@ using PantryPunk.Api.Extensions;
 using PantryPunk.Api.Models.Documents;
 using PantryPunk.Api.Models.Responses;
 using PantryPunk.Api.Services;
-using System.Drawing.Drawing2D;
-using System.Security.AccessControl;
 
 namespace PantryPunk.Api.Controllers;
 
@@ -15,62 +13,55 @@ namespace PantryPunk.Api.Controllers;
 [Authorize]
 public class ImageController : ControllerBase
 {
+    private const int UploadSizeLimit = 2 * 1024 * 1024 + 64 * 1024;
+
     private readonly ImageRecognitionService _imageRecognitionService;
     private readonly BlobStorageService _blobStorageService;
     private readonly ListService _listService;
+    private readonly ImageFileValidator _imageFileValidator;
 
     public ImageController(
         ImageRecognitionService imageRecognitionService,
         BlobStorageService blobStorageService,
-        ListService listService)
+        ListService listService,
+        ImageFileValidator imageFileValidator)
     {
         _imageRecognitionService = imageRecognitionService;
         _blobStorageService = blobStorageService;
         _listService = listService;
+        _imageFileValidator = imageFileValidator;
     }
 
     [HttpPost("photo")]
     [EnableRateLimiting("ai")]
-    [RequestSizeLimit(3 * 1024 * 1024)]
-    [RequestFormLimits(MultipartBodyLengthLimit = 6 * 1024 * 1024)]
+    [RequestSizeLimit(UploadSizeLimit)]
+    [RequestFormLimits(MultipartBodyLengthLimit = UploadSizeLimit)]
     [ProducesResponseType<ShoppingItemResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status422UnprocessableEntity)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
-    public async Task<IActionResult> UploadPhoto(IFormFile image)
+    public async Task<IActionResult> UploadPhoto(IFormFile image, CancellationToken ct)
     {
-        if (image == null || image.Length == 0)
-            return BadRequest(new ErrorResponse { Error = "No image provided." });
-
-        if (image.ContentType != "image/jpeg")
-            return BadRequest(new ErrorResponse { Error = "Only JPEG images are accepted." });
-
-        if (image.Length > 5 * 1024 * 1024)
-            return BadRequest(new ErrorResponse { Error = "Image must be under 2MB." });
+        var validation = await _imageFileValidator.ValidateAsync(image, ct);
+        if (!validation.IsValid)
+            return BadRequest(new ErrorResponse { Error = validation.Error! });
 
         var userId = User.GetUserId();
+        var imageBytes = validation.Bytes!;
+        var mediaType = validation.MediaType!;
 
         // Upload to blob storage
-        var blobName = $"{userId}/{Guid.NewGuid()}.jpg";
+        var blobName = $"{userId}/{Guid.NewGuid()}.{validation.Extension}";
         string blobUrl;
-        using (var stream = image.OpenReadStream())
+        using (var stream = new MemoryStream(imageBytes, writable: false))
         {
-            blobUrl = await _blobStorageService.UploadAsync(blobName, stream, "image/jpeg");
-        }
-
-        // Read image bytes for Claude
-        byte[] imageBytes;
-        using (var memoryStream = new MemoryStream())
-        {
-            using var stream = image.OpenReadStream();
-            await stream.CopyToAsync(memoryStream);
-            imageBytes = memoryStream.ToArray();
+            blobUrl = await _blobStorageService.UploadAsync(blobName, stream, mediaType);
         }
 
         // Call Claude for recognition
-        var recognition = await _imageRecognitionService.RecogniseAsync(imageBytes);
+        var recognition = await _imageRecognitionService.RecogniseAsync(imageBytes, mediaType);
         if (recognition == null)
         {
             await _blobStorageService.DeleteAsync(blobName);

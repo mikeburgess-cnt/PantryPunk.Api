@@ -750,13 +750,18 @@ Uploads a photo to Azure Blob Storage, sends it to the Claude API for recognitio
 
 **Auth:** Auth0 JWT or `X-Share-Code` header
 
-**Request:** `multipart/form-data`, field name `image` (JPEG, already compressed client-side to max 1024px / 85% quality)
+**Request:** `multipart/form-data`, field name `image`. Accepted formats: JPEG, PNG, or WebP. Clients should compress photos to max 1024px / 85% quality before upload.
 
 **Behaviour:**
 1. Read `userId` from the claims principal injected by authentication middleware (JWT or `ShareCodeAuthMiddleware`). This is available as `User.FindFirst(ClaimTypes.NameIdentifier)?.Value` — no container lookup is needed here.
-2. Validate the uploaded file is JPEG (`image/jpeg`). Return `400 Bad Request` for other content types.
-3. Validate file size does not exceed 2MB. Return `400 Bad Request` if exceeded.
-4. Generate a unique blob name: `{userId}/{guid}.jpg`.
+2. Validate the uploaded file via `ImageFileValidator`. All checks below return `400 Bad Request`:
+   - File is present and non-empty.
+   - File size does not exceed **2MB**.
+   - `Content-Type` is one of `image/jpeg`, `image/png`, `image/webp`.
+   - The first bytes match the declared `Content-Type`'s magic signature (defends against renamed / disguised files).
+   - The bytes decode as a valid image via `SixLabors.ImageSharp.Image.Identify` (defends against malformed / truncated files).
+   - Image dimensions do not exceed **8192 × 8192** pixels (defends against decode bombs).
+3. Generate a unique blob name using the **detected** extension: `{userId}/{guid}.{jpg|png|webp}`.
 5. Upload the image stream directly to the `photos` container in Azure Blob Storage via `BlobStorageService.UploadAsync(image.OpenReadStream())`. Do not load the entire file into memory — stream it directly.
 6. Capture the resulting public blob URL.
 7. Read the image stream (rewind or re-open) and Base64-encode it.
@@ -1118,7 +1123,7 @@ var userMessage = new
     source = new
     {
         type = "base64",
-        media_type = "image/jpeg",
+        media_type = mediaType, // "image/jpeg" | "image/png" | "image/webp" — determined by ImageFileValidator
         data = Convert.ToBase64String(imageBytes)
     }
 };
