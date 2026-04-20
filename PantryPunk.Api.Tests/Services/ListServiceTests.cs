@@ -40,7 +40,7 @@ public class ListServiceTests
     public async Task GetListAsync_ListExists_ReturnsMappedResponse()
     {
         var list = CreateList("auth0|abc", CreateItem());
-        _listRepo.Setup(r => r.GetByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
 
         var result = await _sut.GetListAsync("auth0|abc");
 
@@ -53,7 +53,7 @@ public class ListServiceTests
     [Fact]
     public async Task GetListAsync_ListNotFound_ReturnsNull()
     {
-        _listRepo.Setup(r => r.GetByOwnerUserIdAsync("missing")).ReturnsAsync((ShoppingListDocument?)null);
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("missing")).ReturnsAsync((ShoppingListDocument?)null);
 
         var result = await _sut.GetListAsync("missing");
 
@@ -64,7 +64,7 @@ public class ListServiceTests
     public async Task AddItemAsync_AddsItemToList()
     {
         var list = CreateList();
-        _listRepo.Setup(r => r.GetByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
         _listRepo.Setup(r => r.ReplaceAsync(It.IsAny<ShoppingListDocument>()))
             .ReturnsAsync((ShoppingListDocument d) => d);
 
@@ -83,7 +83,7 @@ public class ListServiceTests
     public async Task AddItemAsync_EmptyNotes_SetsToNull()
     {
         var list = CreateList();
-        _listRepo.Setup(r => r.GetByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
         _listRepo.Setup(r => r.ReplaceAsync(It.IsAny<ShoppingListDocument>()))
             .ReturnsAsync((ShoppingListDocument d) => d);
 
@@ -96,7 +96,7 @@ public class ListServiceTests
     [Fact]
     public async Task AddItemAsync_ListNotFound_ReturnsNull()
     {
-        _listRepo.Setup(r => r.GetByOwnerUserIdAsync("missing")).ReturnsAsync((ShoppingListDocument?)null);
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("missing")).ReturnsAsync((ShoppingListDocument?)null);
 
         var result = await _sut.AddItemAsync("missing", new AddItemRequest { Description = "X" }, "Mike");
 
@@ -108,7 +108,7 @@ public class ListServiceTests
     {
         var item = CreateItem("item-1", "Old");
         var list = CreateList("auth0|abc", item);
-        _listRepo.Setup(r => r.GetByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
         _listRepo.Setup(r => r.ReplaceAsync(It.IsAny<ShoppingListDocument>()))
             .ReturnsAsync((ShoppingListDocument d) => d);
 
@@ -125,7 +125,7 @@ public class ListServiceTests
     public async Task UpdateItemAsync_ItemNotFound_ReturnsNull()
     {
         var list = CreateList();
-        _listRepo.Setup(r => r.GetByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
 
         var result = await _sut.UpdateItemAsync("auth0|abc", "nonexistent", new UpdateItemRequest { Description = "X" });
 
@@ -137,7 +137,7 @@ public class ListServiceTests
     {
         var item = CreateItem("item-1");
         var list = CreateList("auth0|abc", item);
-        _listRepo.Setup(r => r.GetByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
         _listRepo.Setup(r => r.ReplaceAsync(It.IsAny<ShoppingListDocument>()))
             .ReturnsAsync((ShoppingListDocument d) => d);
 
@@ -152,7 +152,7 @@ public class ListServiceTests
     public async Task DeleteItemAsync_ItemNotFound_ReturnsFalse()
     {
         var list = CreateList();
-        _listRepo.Setup(r => r.GetByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
 
         var result = await _sut.DeleteItemAsync("auth0|abc", "nonexistent");
 
@@ -162,7 +162,7 @@ public class ListServiceTests
     [Fact]
     public async Task DeleteItemAsync_ListNotFound_ReturnsFalse()
     {
-        _listRepo.Setup(r => r.GetByOwnerUserIdAsync("missing")).ReturnsAsync((ShoppingListDocument?)null);
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("missing")).ReturnsAsync((ShoppingListDocument?)null);
 
         var result = await _sut.DeleteItemAsync("missing", "item-1");
 
@@ -173,7 +173,7 @@ public class ListServiceTests
     public async Task AddItemDirectAsync_AppendsPrebuiltItem()
     {
         var list = CreateList();
-        _listRepo.Setup(r => r.GetByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
         _listRepo.Setup(r => r.ReplaceAsync(It.IsAny<ShoppingListDocument>()))
             .ReturnsAsync((ShoppingListDocument d) => d);
 
@@ -189,7 +189,7 @@ public class ListServiceTests
     public async Task AddItemsDirectAsync_AppendsBatchItems()
     {
         var list = CreateList();
-        _listRepo.Setup(r => r.GetByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
         _listRepo.Setup(r => r.ReplaceAsync(It.IsAny<ShoppingListDocument>()))
             .ReturnsAsync((ShoppingListDocument d) => d);
 
@@ -199,6 +199,58 @@ public class ListServiceTests
         Assert.NotNull(result);
         Assert.Equal(2, result!.Count);
         Assert.Equal(2, list.Items.Count);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_NoActiveList_ReturnsNull()
+    {
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("missing")).ReturnsAsync((ShoppingListDocument?)null);
+
+        var result = await _sut.CompleteAsync("missing");
+
+        Assert.Null(result);
+        _listRepo.Verify(r => r.CreateAsync(It.IsAny<ShoppingListDocument>()), Times.Never);
+        _listRepo.Verify(r => r.ReplaceAsync(It.IsAny<ShoppingListDocument>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_EmptyList_ThrowsEmptyListException()
+    {
+        var list = CreateList();
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
+
+        await Assert.ThrowsAsync<EmptyListException>(() => _sut.CompleteAsync("auth0|abc"));
+        _listRepo.Verify(r => r.CreateAsync(It.IsAny<ShoppingListDocument>()), Times.Never);
+        _listRepo.Verify(r => r.ReplaceAsync(It.IsAny<ShoppingListDocument>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_WithItems_CreatesNewActiveAndCompletesOld()
+    {
+        var oldList = CreateList("auth0|abc", CreateItem());
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(oldList);
+        _listRepo.Setup(r => r.CreateAsync(It.IsAny<ShoppingListDocument>()))
+            .ReturnsAsync((ShoppingListDocument d) => d);
+        _listRepo.Setup(r => r.ReplaceAsync(It.IsAny<ShoppingListDocument>()))
+            .ReturnsAsync((ShoppingListDocument d) => d);
+
+        ShoppingListDocument? created = null;
+        _listRepo.Setup(r => r.CreateAsync(It.IsAny<ShoppingListDocument>()))
+            .Callback<ShoppingListDocument>(d => created = d)
+            .ReturnsAsync((ShoppingListDocument d) => d);
+
+        var result = await _sut.CompleteAsync("auth0|abc");
+
+        Assert.NotNull(result);
+        Assert.NotNull(created);
+        Assert.Equal(created!.ListId, result!.ListId);
+        Assert.NotEqual(oldList.ListId, result.ListId);
+        Assert.Empty(result.Items);
+        Assert.Equal(ShoppingListStatus.Active, created.Status);
+        Assert.Equal(ShoppingListStatus.Completed, oldList.Status);
+        Assert.NotNull(oldList.CompletedAt);
+        _listRepo.Verify(r => r.CreateAsync(It.IsAny<ShoppingListDocument>()), Times.Once);
+        _listRepo.Verify(r => r.ReplaceAsync(oldList), Times.Once);
     }
 
     [Fact]

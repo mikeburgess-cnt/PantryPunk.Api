@@ -15,9 +15,10 @@ public class ListRepository
         _container = context.ShoppingLists;
     }
 
-    public virtual async Task<ShoppingListDocument?> GetByOwnerUserIdAsync(string ownerUserId)
+    public virtual async Task<ShoppingListDocument?> GetActiveByOwnerUserIdAsync(string ownerUserId)
     {
-        var query = new QueryDefinition("SELECT * FROM c WHERE c.ownerUserId = @ownerUserId")
+        var query = new QueryDefinition(
+                "SELECT * FROM c WHERE c.ownerUserId = @ownerUserId AND (NOT IS_DEFINED(c.status) OR c.status = \"active\")")
             .WithParameter("@ownerUserId", ownerUserId);
 
         using var iterator = _container.GetItemQueryIterator<ShoppingListDocument>(query);

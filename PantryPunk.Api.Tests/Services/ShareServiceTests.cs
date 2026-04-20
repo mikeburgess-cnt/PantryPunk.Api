@@ -42,7 +42,7 @@ public class ShareServiceTests
         };
 
         _userService.Setup(s => s.RequireSubscriberAsync(userId)).Returns(Task.CompletedTask);
-        _listRepo.Setup(r => r.GetByOwnerUserIdAsync(userId)).ReturnsAsync(list);
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync(userId)).ReturnsAsync(list);
         _shareRepo.Setup(r => r.ActiveCodeExistsAsync(It.IsAny<string>())).ReturnsAsync(false);
         _shareRepo.Setup(r => r.CreateAsync(It.IsAny<ShareCodeDocument>()))
             .ReturnsAsync((ShareCodeDocument d) => d);
@@ -71,7 +71,7 @@ public class ShareServiceTests
     {
         var userId = "auth0|sub1";
         _userService.Setup(s => s.RequireSubscriberAsync(userId)).Returns(Task.CompletedTask);
-        _listRepo.Setup(r => r.GetByOwnerUserIdAsync(userId))
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync(userId))
             .ReturnsAsync(new ShoppingListDocument { Id = "list-1", ListId = "list-1", OwnerUserId = userId });
         _shareRepo.Setup(r => r.ActiveCodeExistsAsync(It.IsAny<string>())).ReturnsAsync(true); // always collides
 

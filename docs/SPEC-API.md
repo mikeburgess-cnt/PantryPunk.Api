@@ -306,6 +306,7 @@ Endpoints that require subscriber status (e.g. `POST /api/share/generate-code`) 
 | `POST /api/shopping-list/items` | JWT or Share Code | |
 | `PUT /api/shopping-list/items/:id` | JWT or Share Code | |
 | `DELETE /api/shopping-list/items/:id` | JWT or Share Code | |
+| `POST /api/shopping-list/complete` | JWT or Share Code | Mark active list completed, create new active list |
 | `POST /api/shopping-list/items/photo` | JWT or Share Code | Upload photo, recognise item, add to list |
 | `POST /api/shopping-list/items/voice` | JWT or Share Code | Transcribe audio, extract items, add to list |
 | `POST /api/share/generate-code` | JWT + isSubscriber | |
@@ -458,11 +459,20 @@ public class ShoppingListDocument
     [JsonProperty("items")]
     public List<ShoppingItemDocument> Items { get; set; } = new();
 
+    // "active" or "completed". Exactly one active list per user. Legacy docs without
+    // this field are treated as active by the active-list query.
+    [JsonProperty("status")]
+    public string Status { get; set; }
+
     [JsonProperty("createdAt")]
     public DateTime CreatedAt { get; set; }
 
     [JsonProperty("updatedAt")]
     public DateTime UpdatedAt { get; set; }
+
+    // Set when the list is marked completed; null while active.
+    [JsonProperty("completedAt")]
+    public DateTime? CompletedAt { get; set; }
 }
 
 public class ShoppingItemDocument
@@ -631,7 +641,7 @@ Returns the full shopping list for the authenticated user or guest. Called by th
 1. Determine the caller's identity from the claims principal injected by the authentication middleware:
    - If authenticated via JWT: the `userId` is the Auth0 `sub` claim extracted by `JwtBearerAuthentication`.
    - If authenticated via share code: the `userId` is the `ownerUserId` injected as a synthetic claim by `ShareCodeAuthMiddleware`. The middleware has already validated the share code (not expired, not revoked) before this point — the controller does not need to re-validate it.
-2. Retrieve the `ShoppingListDocument` from the `ShoppingLists` container where `ownerUserId == userId`. Return `404 Not Found` if no list exists.
+2. Retrieve the active `ShoppingListDocument` from the `ShoppingLists` container where `ownerUserId == userId` AND (`status` is undefined OR `status == "active"`). Return `404 Not Found` if no active list exists.
 3. Map the `ShoppingListDocument` and its embedded `items` array to the response shape.
 4. Return `200 OK` with the full list.
 
@@ -680,7 +690,7 @@ Adds a new item to the shopping list.
 1. Read `userId` from the claims principal injected by authentication middleware (JWT or `ShareCodeAuthMiddleware`). This is available as `User.FindFirst(ClaimTypes.NameIdentifier)?.Value` — no container lookup is needed here.
 2. Trim `description`. Return `400 Bad Request` if the trimmed value is empty.
 3. Trim `notes`. Set to `null` if the trimmed value is empty.
-4. Retrieve the `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId` as the owner. Return `404 Not Found` if no list exists for this user (should not occur in normal operation — list is created on first profile save).
+4. Retrieve the active `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId` as the owner. Return `404 Not Found` if no active list exists for this user (should not occur in normal operation — an active list always exists after first profile save and is replaced by `POST /api/shopping-list/complete`).
 5. Generate a new `id` for the item using `Guid.NewGuid().ToString()`.
 6. Resolve `addedBy`: for JWT-authenticated users, retrieve `UserDocument.DisplayName` from the `Users` container; for share code guests, read the `RecipientName` claim from the injected claims principal (`User.FindFirst("RecipientName")?.Value`).
 7. Construct a new `ShoppingItemDocument` with the provided fields, the generated `id`, resolved `addedBy`, `photoUrl = null`, `confidence = null`, and `createdAt`/`updatedAt` set to `DateTime.UtcNow`.
@@ -690,6 +700,26 @@ Adds a new item to the shopping list.
 11. Return `201 Created` with the newly created `ShoppingItemDocument` serialised as the response body.
 
 **Response `201 Created`:** Returns the created item.
+
+---
+
+#### `POST /api/shopping-list/complete`
+
+Marks the user's active shopping list as completed and creates a fresh empty active list. Called by the app when the user finishes shopping. Completed lists remain in storage so future features (auto-suggest, history view) can read them.
+
+**Auth:** Auth0 JWT or `X-Share-Code` header. Either the owner or a share-code guest can complete (the guest is often the one actually shopping).
+
+**Behaviour:**
+1. Read `userId` from the claims principal.
+2. Retrieve the active `ShoppingListDocument` (same query as `GET /api/shopping-list`). Return `404 Not Found` if none exists.
+3. If the active list has zero items, return `400 Bad Request` with `"Cannot complete an empty list."`.
+4. Create a new `ShoppingListDocument` for the same `ownerUserId` with a fresh `id`/`listId`, empty `items`, `status = "active"`, and `createdAt`/`updatedAt = DateTime.UtcNow`. Write it to the container.
+5. On the previously active list, set `status = "completed"`, `completedAt = DateTime.UtcNow`, `updatedAt = DateTime.UtcNow`. Replace it in the container.
+6. Return `200 OK` with the new empty active list (same shape as `GET /api/shopping-list`).
+
+> **Failure mode:** the order is create-new-first. If step 5 fails after step 4 succeeds, two documents may briefly carry active-equivalent state for the same user; a retry will see the new empty list and reject with `400`. Surface the error and log it for operator follow-up.
+
+**Response `200 OK`:** The new (empty) active list, in the same shape as `GET /api/shopping-list`.
 
 ---
 
@@ -713,7 +743,7 @@ Updates an existing item.
 1. Read `userId` from the claims principal injected by authentication middleware (JWT or `ShareCodeAuthMiddleware`). This is available as `User.FindFirst(ClaimTypes.NameIdentifier)?.Value` — no container lookup is needed here.
 2. Trim `description`. Return `400 Bad Request` if the trimmed value is empty.
 3. Trim `notes`. Set to `null` if the trimmed value is empty.
-4. Retrieve the `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId` as the owner. Return `404 Not Found` if no list exists.
+4. Retrieve the active `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId` as the owner. Return `404 Not Found` if no active list exists.
 5. Locate the item within the `items` array where `item.id == itemId`. Return `404 Not Found` if no matching item exists.
 6. Update the located item's fields: `description`, `quantity`, `notes`, `photoUrl`.
 7. Set `updatedAt` on the item to `DateTime.UtcNow`.
@@ -733,7 +763,7 @@ Deletes an item from the list.
 
 **Behaviour:**
 1. Read `userId` from the claims principal injected by authentication middleware (JWT or `ShareCodeAuthMiddleware`). This is available as `User.FindFirst(ClaimTypes.NameIdentifier)?.Value` — no container lookup is needed here.
-2. Retrieve the `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId` as the owner. Return `404 Not Found` if no list exists.
+2. Retrieve the active `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId` as the owner. Return `404 Not Found` if no active list exists.
 3. Locate the item within the `items` array where `item.id == itemId`. Return `404 Not Found` if no matching item exists.
 4. Remove the located item from the `items` array.
 5. Set `updatedAt` on the `ShoppingListDocument` to `DateTime.UtcNow`.
@@ -768,7 +798,7 @@ Uploads a photo to Azure Blob Storage, sends it to the Claude API for recognitio
 8. Send the Base64-encoded image to the Claude API with the image recognition system prompt (see Claude API Integration section). Include the confidence self-assessment instruction in the prompt.
 9. Parse the Claude response JSON. If parsing fails, delete the uploaded blob and return `422 Unprocessable Entity`.
    - If `confidence` is `"low"`: the item is still created and returned with `confidence: "low"`. The blob is **not** deleted — the URL is stored with the item in case the user later confirms it manually via the Detail Screen. If the user dismisses the low-confidence result without adding the item, the blob remains in storage as an orphan and will be cleaned up by the future scheduled cleanup job.
-10. Retrieve the `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId`. Return `404 Not Found` if no list exists.
+10. Retrieve the active `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId`. Return `404 Not Found` if no active list exists.
 11. Construct a new `ShoppingItemDocument` with:
     - `id` = `Guid.NewGuid().ToString()`
     - `description` from Claude response
@@ -825,7 +855,7 @@ Accepts an audio recording, transcribes it via Azure AI Speech, extracts shoppin
 5. If transcription fails or returns empty text, return `422 Unprocessable Entity` with `{ "error": "Could not transcribe audio" }`.
 6. Send the transcribed text to the Claude API with the voice recognition system prompt (see Claude API Integration section) to extract structured shopping items.
 7. If Claude returns a response that cannot be parsed as valid JSON, or returns an empty items array, return `422 Unprocessable Entity` with `{ "error": "Could not recognise items from speech" }`.
-8. Retrieve the `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId`. Return `404 Not Found` if no list exists.
+8. Retrieve the active `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId`. Return `404 Not Found` if no active list exists.
 9. Resolve `addedBy`: for JWT-authenticated users, retrieve `UserDocument.DisplayName` from the `Users` container; for share code guests, read the `RecipientName` claim from the injected claims principal (`User.FindFirst("RecipientName")?.Value`).
 10. For each item returned by Claude, construct a new `ShoppingItemDocument` with:
     - `id` = `Guid.NewGuid().ToString()`
@@ -894,7 +924,7 @@ Generates a unique share code for a subscriber. The recipient's name is **not** 
 1. Extract `userId` from the Auth0 JWT `sub` claim.
 2. Retrieve the `UserDocument` from the `Users` container using `userId` as the partition key. Return `404 Not Found` if no user document exists.
 3. Check `userDocument.IsSubscriber`. If `false`, return `403 Forbidden` with `{ "error": "Sharing requires an active subscription." }`.
-4. Retrieve the `ShoppingListDocument` from the `ShoppingLists` container where `ownerUserId == userId`. Return `404 Not Found` if no list exists.
+4. Retrieve the active `ShoppingListDocument` from the `ShoppingLists` container where `ownerUserId == userId` AND (`status` is undefined OR `status == "active"`). Return `404 Not Found` if no active list exists. The `listId` stored on the share code document is informational; share-code guests are resolved to `ownerUserId` and always read the user's currently active list.
 5. Capture the `listId` from the retrieved `ShoppingListDocument`.
 6. Generate a 6-character uppercase alphanumeric share code using `RandomNumberGenerator` (e.g. `6Y812C`). Use only characters `A-Z` and `0-9` to avoid ambiguous characters (`0`/`O`, `1`/`I`/`L`).
 7. Query the `ShareCodes` container to check whether an active (non-revoked, non-expired) code with the same value already exists. If a collision is found, regenerate and re-check. Retry up to 5 times. If a unique code cannot be generated after 5 attempts, return `409 Conflict` with `{ "error": "Could not generate a unique code. Please try again." }`.

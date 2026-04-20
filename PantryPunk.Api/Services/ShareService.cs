@@ -33,7 +33,7 @@ public class ShareService
     {
         await _userService.RequireSubscriberAsync(userId);
 
-        var list = await _listRepository.GetByOwnerUserIdAsync(userId)
+        var list = await _listRepository.GetActiveByOwnerUserIdAsync(userId)
             ?? throw new InvalidOperationException("Shopping list not found for user.");
 
         var expiryHours = _configuration.GetValue("PantryPunk:ShareCode:ExpiryHours", 24);

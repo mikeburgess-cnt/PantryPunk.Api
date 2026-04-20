@@ -81,6 +81,28 @@ public class ShoppingListController : ControllerBase
         return Ok(result);
     }
 
+    [HttpPost("complete")]
+    [ProducesResponseType<ShoppingListResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Complete()
+    {
+        var userId = User.GetUserId();
+        try
+        {
+            var newList = await _listService.CompleteAsync(userId);
+            if (newList == null)
+                return NotFound(new ErrorResponse { Error = "Shopping list not found." });
+
+            return Ok(newList);
+        }
+        catch (EmptyListException ex)
+        {
+            return BadRequest(new ErrorResponse { Error = ex.Message });
+        }
+    }
+
     [HttpDelete("items/{itemId}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]

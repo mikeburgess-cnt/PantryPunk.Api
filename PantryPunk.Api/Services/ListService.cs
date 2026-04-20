@@ -18,7 +18,7 @@ public class ListService
 
     public async Task<ShoppingListResponse?> GetListAsync(string userId)
     {
-        var list = await _listRepository.GetByOwnerUserIdAsync(userId);
+        var list = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
         if (list == null) return null;
 
         return MapToResponse(list);
@@ -26,7 +26,7 @@ public class ListService
 
     public async Task<ShoppingItemResponse?> AddItemAsync(string userId, AddItemRequest request, string addedBy)
     {
-        var list = await _listRepository.GetByOwnerUserIdAsync(userId);
+        var list = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
         if (list == null) return null;
 
         var now = DateTime.UtcNow;
@@ -50,7 +50,7 @@ public class ListService
 
     public async Task<ShoppingItemResponse?> UpdateItemAsync(string userId, string itemId, UpdateItemRequest request)
     {
-        var list = await _listRepository.GetByOwnerUserIdAsync(userId);
+        var list = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
         if (list == null) return null;
 
         var item = list.Items.FirstOrDefault(i => i.Id == itemId);
@@ -71,7 +71,7 @@ public class ListService
 
     public async Task<bool> DeleteItemAsync(string userId, string itemId)
     {
-        var list = await _listRepository.GetByOwnerUserIdAsync(userId);
+        var list = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
         if (list == null) return false;
 
         var item = list.Items.FirstOrDefault(i => i.Id == itemId);
@@ -86,7 +86,7 @@ public class ListService
 
     public async Task<ShoppingItemResponse?> AddItemDirectAsync(string userId, ShoppingItemDocument itemDoc)
     {
-        var list = await _listRepository.GetByOwnerUserIdAsync(userId);
+        var list = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
         if (list == null) return null;
 
         list.Items.Add(itemDoc);
@@ -98,7 +98,7 @@ public class ListService
 
     public async Task<List<ShoppingItemResponse>?> AddItemsDirectAsync(string userId, List<ShoppingItemDocument> items)
     {
-        var list = await _listRepository.GetByOwnerUserIdAsync(userId);
+        var list = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
         if (list == null) return null;
 
         list.Items.AddRange(items);
@@ -106,6 +106,39 @@ public class ListService
         await _listRepository.ReplaceAsync(list);
 
         return items.Select(MapItemToResponse).ToList();
+    }
+
+    // Create-new-first ordering: if the second write (marking the old list completed) fails,
+    // a retry sees the new empty list and rejects with EmptyListException. Operator must clean
+    // up the orphaned active-flagged old document manually.
+    public async Task<ShoppingListResponse?> CompleteAsync(string userId)
+    {
+        var active = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
+        if (active == null) return null;
+
+        if (active.Items.Count == 0)
+            throw new EmptyListException("Cannot complete an empty list.");
+
+        var now = DateTime.UtcNow;
+        var newListId = Guid.NewGuid().ToString();
+        var newList = new ShoppingListDocument
+        {
+            Id = newListId,
+            ListId = newListId,
+            OwnerUserId = userId,
+            Items = new List<ShoppingItemDocument>(),
+            Status = ShoppingListStatus.Active,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        await _listRepository.CreateAsync(newList);
+
+        active.Status = ShoppingListStatus.Completed;
+        active.CompletedAt = now;
+        active.UpdatedAt = now;
+        await _listRepository.ReplaceAsync(active);
+
+        return MapToResponse(newList);
     }
 
     public async Task<string?> ResolveAddedByAsync(string userId, string? recipientName)

@@ -43,16 +43,17 @@ public class UserService
         {
             try
             {
+                var listId = Guid.NewGuid().ToString();
                 var list = new ShoppingListDocument
                 {
-                    Id = Guid.NewGuid().ToString(),
-                    ListId = Guid.NewGuid().ToString(),
+                    Id = listId,
+                    ListId = listId,
                     OwnerUserId = userId,
                     Items = new List<ShoppingItemDocument>(),
+                    Status = ShoppingListStatus.Active,
                     CreatedAt = now,
                     UpdatedAt = now
                 };
-                list.Id = list.ListId;
                 await _listRepository.CreateAsync(list);
             }
             catch (Exception ex)
