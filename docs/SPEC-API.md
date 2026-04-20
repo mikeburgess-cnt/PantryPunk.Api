@@ -276,7 +276,7 @@ X-Share-Code: 6Y812C
 
 `ShareCodeAuthMiddleware` intercepts requests that include this header (without an `Authorization` header), validates the code against the `ShareCodes` Cosmos DB container, and if valid, injects a synthetic claims principal with:
 - `NameIdentifier` claim = `ownerUserId` (the subscriber's user ID — used to look up the list)
-- A custom `RecipientName` claim = `ShareCodeDocument.RecipientName` (used as `addedBy` on items the guest adds)
+- A custom `RecipientName` claim = `ShareCodeDocument.RecipientName`, i.e. the name the guest supplied when they confirmed the code (used as `addedBy` on items the guest adds)
 
 The list controller and service layer read these claims from the principal — no further container lookups are needed for authentication or `addedBy` resolution.
 
@@ -879,46 +879,40 @@ Accepts an audio recording, transcribes it via Azure AI Speech, extracts shoppin
 
 #### `POST /api/share/generate-code`
 
-Generates a unique share code for a subscriber.
+Generates a unique share code for a subscriber. The recipient's name is **not** supplied here — the guest provides it when they confirm the code.
 
 **Auth:** Auth0 JWT, `isSubscriber` must be `true` (checked against Cosmos DB)
 
-**Request:**
-```json
-{
-  "recipientName": "Natalie"
-}
-```
+**Request:** empty body (`{}` or no body).
 
 **Behaviour:**
 1. Extract `userId` from the Auth0 JWT `sub` claim.
-2. Trim `recipientName`. Return `400 Bad Request` if the trimmed value is empty.
-3. Retrieve the `UserDocument` from the `Users` container using `userId` as the partition key. Return `404 Not Found` if no user document exists.
-4. Check `userDocument.IsSubscriber`. If `false`, return `403 Forbidden` with `{ "error": "Sharing requires an active subscription." }`.
-5. Retrieve the `ShoppingListDocument` from the `ShoppingLists` container where `ownerUserId == userId`. Return `404 Not Found` if no list exists.
-6. Capture the `listId` from the retrieved `ShoppingListDocument`.
-7. Generate a 6-character uppercase alphanumeric share code using `RandomNumberGenerator` (e.g. `6Y812C`). Use only characters `A-Z` and `0-9` to avoid ambiguous characters (`0`/`O`, `1`/`I`/`L`).
-8. Query the `ShareCodes` container to check whether an active (non-revoked, non-expired) code with the same value already exists. If a collision is found, regenerate and re-check. Retry up to 5 times. If a unique code cannot be generated after 5 attempts, return `409 Conflict` with `{ "error": "Could not generate a unique code. Please try again." }`.
-9. Construct a new `ShareCodeDocument`:
+2. Retrieve the `UserDocument` from the `Users` container using `userId` as the partition key. Return `404 Not Found` if no user document exists.
+3. Check `userDocument.IsSubscriber`. If `false`, return `403 Forbidden` with `{ "error": "Sharing requires an active subscription." }`.
+4. Retrieve the `ShoppingListDocument` from the `ShoppingLists` container where `ownerUserId == userId`. Return `404 Not Found` if no list exists.
+5. Capture the `listId` from the retrieved `ShoppingListDocument`.
+6. Generate a 6-character uppercase alphanumeric share code using `RandomNumberGenerator` (e.g. `6Y812C`). Use only characters `A-Z` and `0-9` to avoid ambiguous characters (`0`/`O`, `1`/`I`/`L`).
+7. Query the `ShareCodes` container to check whether an active (non-revoked, non-expired) code with the same value already exists. If a collision is found, regenerate and re-check. Retry up to 5 times. If a unique code cannot be generated after 5 attempts, return `409 Conflict` with `{ "error": "Could not generate a unique code. Please try again." }`.
+8. Construct a new `ShareCodeDocument`:
     - `id` = `Guid.NewGuid().ToString()`
-    - `code` = the generated code from step 7
-    - `listId` = from step 6
+    - `code` = the generated code from step 6
+    - `listId` = from step 5
     - `ownerUserId` = `userId`
-    - `recipientName` = trimmed value from step 2
+    - `recipientName` = `null` (populated at confirmation time)
     - `confirmed` = `false`
     - `confirmedAt` = `null`
     - `revokedAt` = `null`
     - `expiresAt` = `DateTime.UtcNow.AddHours(24)` (configurable via `PantryPunk:ShareCode:ExpiryHours` in Azure App Configuration)
     - `createdAt` = `DateTime.UtcNow`
-10. Write the new `ShareCodeDocument` to the `ShareCodes` container.
-11. Return `200 OK` with the created share code details.
+9. Write the new `ShareCodeDocument` to the `ShareCodes` container.
+10. Return `200 OK` with the created share code details.
 
 **Response `200 OK`:**
 ```json
 {
   "shareId": "sharecode-uuid",
   "code": "6Y812C",
-  "recipientName": "Natalie",
+  "recipientName": null,
   "confirmed": false,
   "expiresAt": "2026-04-12T08:00:00Z"
 }
@@ -928,22 +922,25 @@ Generates a unique share code for a subscriber.
 
 #### `POST /api/share/confirm-code`
 
-Non-subscriber submits a code to join a shared list. Public endpoint — no authentication required.
+Non-subscriber submits a code to join a shared list **and provides their own display name**. Public endpoint — no authentication required.
 
 **Request:**
 ```json
 {
-  "code": "6Y812C"
+  "code": "6Y812C",
+  "recipientName": "Natalie"
 }
 ```
 
 **Behaviour:**
+- Trim `code` and `recipientName`. Return `400 Bad Request` if either is empty after trimming.
 - Look up the `ShareCodeDocument` by `code` (partition key lookup — efficient).
 - Return `404` if code not found.
 - Return `410 Gone` if `expiresAt` has passed and `confirmed == false`.
 - Return `410 Gone` if `revokedAt` is set.
-- If valid: set `confirmed = true`, `confirmedAt = DateTime.UtcNow`. Write the updated document back to the `ShareCodes` container.
-- Return `200 OK` with `recipientName` so the app can store it as the guest's display name.
+- If valid and not yet confirmed: set `recipientName = <trimmed request value>`, `confirmed = true`, `confirmedAt = DateTime.UtcNow`. Write the updated document back to the `ShareCodes` container.
+- If valid and already confirmed (idempotent re-confirm): leave the stored `recipientName` intact — first-confirm wins. The new name in the request is ignored.
+- Return `200 OK` with the stored `recipientName` so the app can display it as the guest's name.
 
 **Response `200 OK`:**
 ```json
@@ -991,6 +988,8 @@ Returns all share codes created by the subscriber (for the Share It screen list)
   ]
 }
 ```
+
+`recipientName` is `null` for codes that have been generated but not yet confirmed. Clients should render these as a "pending" state.
 
 ---
 

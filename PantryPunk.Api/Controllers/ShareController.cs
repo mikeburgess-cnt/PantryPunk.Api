@@ -20,18 +20,12 @@ public class ShareController : ControllerBase
 
     [HttpPost("generate-code")]
     [Authorize(Policy = "RegisteredUser")]
-    public async Task<IActionResult> GenerateCode([FromBody] GenerateShareCodeRequest request)
+    public async Task<IActionResult> GenerateCode([FromBody] GenerateShareCodeRequest? request)
     {
-        var recipientName = request.RecipientName?.Trim();
-        if (string.IsNullOrEmpty(recipientName))
-            return BadRequest(new ErrorResponse { Error = "Recipient name is required." });
-
-        request.RecipientName = recipientName;
-
         try
         {
             var userId = User.GetUserId();
-            var result = await _shareService.GenerateCodeAsync(userId, request);
+            var result = await _shareService.GenerateCodeAsync(userId, request ?? new GenerateShareCodeRequest());
             return Ok(result);
         }
         catch (ForbiddenException ex)
@@ -50,6 +44,12 @@ public class ShareController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(request.Code))
             return BadRequest(new ErrorResponse { Error = "Code is required." });
+
+        var trimmedName = request.RecipientName?.Trim();
+        if (string.IsNullOrEmpty(trimmedName))
+            return BadRequest(new ErrorResponse { Error = "Recipient name is required." });
+
+        request.RecipientName = trimmedName;
 
         var (success, recipientName, error) = await _shareService.ConfirmCodeAsync(request);
 

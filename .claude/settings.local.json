@@ -6,7 +6,8 @@
       "Bash(dotnet build:*)",
       "Bash(dotnet new:*)",
       "Bash(dotnet nuget:*)",
-      "Bash(dotnet test:*)"
+      "Bash(dotnet test:*)",
+      "Bash(ls *)"
     ]
   }
 }

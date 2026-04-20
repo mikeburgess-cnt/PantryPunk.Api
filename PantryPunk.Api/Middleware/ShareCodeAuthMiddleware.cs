@@ -63,7 +63,7 @@ public class ShareCodeAuthMiddleware
         var claims = new[]
         {
             new Claim(ClaimTypes.NameIdentifier, document.OwnerUserId),
-            new Claim("RecipientName", document.RecipientName)
+            new Claim("RecipientName", document.RecipientName!)
         };
 
         var identity = new ClaimsIdentity(claims, "ShareCode");

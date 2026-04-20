@@ -36,7 +36,6 @@ public class ShareService
         var list = await _listRepository.GetByOwnerUserIdAsync(userId)
             ?? throw new InvalidOperationException("Shopping list not found for user.");
 
-        var recipientName = request.RecipientName.Trim();
         var expiryHours = _configuration.GetValue("PantryPunk:ShareCode:ExpiryHours", 24);
 
         string code = null!;
@@ -57,7 +56,6 @@ public class ShareService
             Code = code,
             ListId = list.ListId,
             OwnerUserId = userId,
-            RecipientName = recipientName,
             Confirmed = false,
             ExpiresAt = now.AddHours(expiryHours),
             CreatedAt = now
@@ -84,6 +82,7 @@ public class ShareService
 
         if (!document.Confirmed)
         {
+            document.RecipientName = request.RecipientName.Trim();
             document.Confirmed = true;
             document.ConfirmedAt = DateTime.UtcNow;
             await _shareRepository.ReplaceAsync(document);
