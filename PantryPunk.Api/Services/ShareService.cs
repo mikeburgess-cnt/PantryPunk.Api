@@ -93,12 +93,23 @@ public class ShareService
 
     public async Task<List<ShareCodeResponse>> GetShareCodesAsync(string userId)
     {
+        await _userService.RequireSubscriberAsync(userId);
         var documents = await _shareRepository.GetByOwnerUserIdAsync(userId);
         return documents.Select(MapToListResponse).ToList();
     }
 
-    public async Task<bool> RevokeAsync(string shareId, string userId)
+    public async Task<bool> RevokeAsync(string shareId, string userId, bool isShareCodeUser, string? authenticatedShareId)
     {
+        if (isShareCodeUser)
+        {
+            if (authenticatedShareId != shareId)
+                throw new ForbiddenException("You can only revoke your own share code.");
+        }
+        else
+        {
+            await _userService.RequireSubscriberAsync(userId);
+        }
+
         var document = await _shareRepository.GetByIdAndOwnerAsync(shareId, userId);
         if (document == null) return false;
 

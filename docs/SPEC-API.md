@@ -310,8 +310,8 @@ Endpoints that require subscriber status (e.g. `POST /api/share/generate-code`) 
 | `POST /api/shopping-list/items/voice` | JWT or Share Code | Transcribe audio, extract items, add to list |
 | `POST /api/share/generate-code` | JWT + isSubscriber | |
 | `POST /api/share/confirm-code` | None | Public endpoint |
-| `GET /api/share` | JWT + isSubscriber | Replaces polling status endpoint |
-| `DELETE /api/share/:shareId` | JWT + isSubscriber | |
+| `GET /api/share` | JWT + isSubscriber | Replaces polling status endpoint; share-code guests are rejected |
+| `DELETE /api/share/:shareId` | (JWT + isSubscriber) or Share Code (self only) | Guests may only revoke the code they authenticated with |
 | `POST /api/webhooks/revenuecat` | RevenueCat signature | Not Auth0 |
 
 ---
@@ -962,15 +962,16 @@ Non-subscriber submits a code to join a shared list **and provides their own dis
 
 #### `GET /api/share`
 
-Returns all share codes created by the subscriber (for the Share It screen list). Excludes revoked codes.
+Returns all share codes created by the subscriber (for the Share It screen list). Excludes revoked codes. Subscribers only — share-code guests are rejected.
 
-**Auth:** Auth0 JWT
+**Auth:** Auth0 JWT + isSubscriber
 
 **Behaviour:**
-1. Extract `userId` from the Auth0 JWT `sub` claim.
-2. Query the `ShareCodes` container for all documents where `ownerUserId == userId` and `revokedAt == null`. (Note: the container is partitioned by `/code`, so this is a cross-partition query scoped by `ownerUserId`. At household scale this is negligible — typically < 10 documents.)
-3. Map each `ShareCodeDocument` to the response shape.
-4. Return `200 OK` with the array sorted by `createdAt` ascending.
+1. Extract `userId` from the Auth0 JWT `sub` claim. Share-code guests (who authenticate via `X-Share-Code`) are rejected by the `RegisteredUser` policy and never reach this handler.
+2. Load the caller's `UserDocument` and return `403 Forbidden` with `{ "error": "Sharing requires an active subscription." }` if `isSubscriber` is false.
+3. Query the `ShareCodes` container for all documents where `ownerUserId == userId` and `revokedAt == null`. (Note: the container is partitioned by `/code`, so this is a cross-partition query scoped by `ownerUserId`. At household scale this is negligible — typically < 10 documents.)
+4. Map each `ShareCodeDocument` to the response shape.
+5. Return `200 OK` with the array sorted by `createdAt` ascending.
 
 **Response `200 OK`:**
 ```json
@@ -995,14 +996,18 @@ Returns all share codes created by the subscriber (for the Share It screen list)
 
 #### `DELETE /api/share/:shareId`
 
-Revokes a share code. The associated guest loses list access on their next API call.
+Revokes a share code. The associated guest loses list access on their next API call. Accepts two caller modes:
 
-**Auth:** Auth0 JWT
+1. **Subscriber (Auth0 JWT + `isSubscriber`):** may revoke any share code they own.
+2. **Share-code guest (`X-Share-Code` header):** may revoke **only** the share code they authenticated with. This is a "leave this list" action.
+
+**Auth:** Auth0 JWT + isSubscriber, **or** `X-Share-Code` (self only)
 
 **Behaviour:**
-- The `ShareCodes` container is partitioned by `/code`, not `/id`. A direct point-read by `shareId` alone would require a cross-partition query. To avoid this, perform a query scoped to the current user: `SELECT * FROM c WHERE c.id = @shareId AND c.ownerUserId = @userId`. This is efficient because the `ownerUserId` filter limits the scan, and the container is small at household scale.
-- Return `404 Not Found` if no document with the given `shareId` exists for this user.
-- Verify the requesting `userId` matches `ownerUserId`. Return `403 Forbidden` if not (this is also enforced by the query above, but checked explicitly for clarity).
+- If the caller is a share-code guest, compare the route `shareId` against the document Id of the share code they authenticated with. Return `403 Forbidden` with `{ "error": "You can only revoke your own share code." }` if they differ.
+- If the caller is a JWT user, load their `UserDocument` and return `403 Forbidden` with `{ "error": "Sharing requires an active subscription." }` if `isSubscriber` is false.
+- The `ShareCodes` container is partitioned by `/code`, not `/id`. A direct point-read by `shareId` alone would require a cross-partition query. To avoid this, perform a query scoped to the owner: `SELECT * FROM c WHERE c.id = @shareId AND c.ownerUserId = @userId`. For share-code guests the `userId` is the owner's id (injected by the middleware), so the ownership check is preserved.
+- Return `404 Not Found` if no document with the given `shareId` exists for this owner.
 - Set `revokedAt = DateTime.UtcNow`.
 - Write the updated `ShareCodeDocument` back to the container.
 - Do not delete the document — soft delete for audit trail.

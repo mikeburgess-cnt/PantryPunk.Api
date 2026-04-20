@@ -32,7 +32,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("RegisteredUser", policy =>
-        policy.RequireAuthenticatedUser());
+        policy.RequireAuthenticatedUser()
+              .RequireAssertion(ctx => !ctx.User.IsShareCodeUser()));
 });
 
 // Infrastructure

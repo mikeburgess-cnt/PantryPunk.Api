@@ -7,7 +7,8 @@
       "Bash(dotnet new:*)",
       "Bash(dotnet nuget:*)",
       "Bash(dotnet test:*)",
-      "Bash(ls *)"
+      "Bash(ls *)",
+      "Bash(xargs grep *)"
     ]
   }
 }

@@ -47,10 +47,10 @@ public class ShareServiceTests
         _shareRepo.Setup(r => r.CreateAsync(It.IsAny<ShareCodeDocument>()))
             .ReturnsAsync((ShareCodeDocument d) => d);
 
-        var request = new GenerateShareCodeRequest { RecipientName = "  Natalie  " };
+        var request = new GenerateShareCodeRequest();
         var result = await _sut.GenerateCodeAsync(userId, request);
 
-        Assert.Equal("Natalie", result.RecipientName); // trimmed
+        Assert.Null(result.RecipientName); // set later at confirm-code time
         Assert.Equal(6, result.Code.Length);
         Assert.False(result.Confirmed);
         Assert.NotEmpty(result.ShareId);
@@ -63,7 +63,7 @@ public class ShareServiceTests
             .ThrowsAsync(new ForbiddenException("Sharing requires an active subscription."));
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
-            _sut.GenerateCodeAsync("auth0|free", new GenerateShareCodeRequest { RecipientName = "X" }));
+            _sut.GenerateCodeAsync("auth0|free", new GenerateShareCodeRequest()));
     }
 
     [Fact]
@@ -76,7 +76,7 @@ public class ShareServiceTests
         _shareRepo.Setup(r => r.ActiveCodeExistsAsync(It.IsAny<string>())).ReturnsAsync(true); // always collides
 
         await Assert.ThrowsAsync<ConflictException>(() =>
-            _sut.GenerateCodeAsync(userId, new GenerateShareCodeRequest { RecipientName = "X" }));
+            _sut.GenerateCodeAsync(userId, new GenerateShareCodeRequest()));
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public class ShareServiceTests
             .ReturnsAsync((ShareCodeDocument d) => d);
 
         var (success, recipientName, error) = await _sut.ConfirmCodeAsync(
-            new ConfirmShareCodeRequest { Code = "abc123" }); // lowercased input
+            new ConfirmShareCodeRequest { Code = "abc123", RecipientName = "Natalie" }); // lowercased input
 
         Assert.True(success);
         Assert.Equal("Natalie", recipientName);
@@ -170,6 +170,7 @@ public class ShareServiceTests
     [Fact]
     public async Task GetShareCodesAsync_ReturnsMappedList()
     {
+        _userService.Setup(s => s.RequireSubscriberAsync("auth0|owner")).Returns(Task.CompletedTask);
         var docs = new List<ShareCodeDocument>
         {
             new() { Id = "sc-1", Code = "ABC123", RecipientName = "Natalie",
@@ -188,7 +189,59 @@ public class ShareServiceTests
     }
 
     [Fact]
-    public async Task RevokeAsync_SetsRevokedAt()
+    public async Task GetShareCodesAsync_NotSubscriber_ThrowsForbidden()
+    {
+        _userService.Setup(s => s.RequireSubscriberAsync("auth0|free"))
+            .ThrowsAsync(new ForbiddenException("Sharing requires an active subscription."));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.GetShareCodesAsync("auth0|free"));
+        _shareRepo.Verify(r => r.GetByOwnerUserIdAsync(It.IsAny<string>(), It.IsAny<bool>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RevokeAsync_SubscriberOwner_SetsRevokedAt()
+    {
+        _userService.Setup(s => s.RequireSubscriberAsync("auth0|owner")).Returns(Task.CompletedTask);
+        var doc = new ShareCodeDocument
+        {
+            Id = "sc-1", Code = "ABC123", OwnerUserId = "auth0|owner", ListId = "list-1",
+            RecipientName = "Natalie", CreatedAt = DateTime.UtcNow
+        };
+        _shareRepo.Setup(r => r.GetByIdAndOwnerAsync("sc-1", "auth0|owner")).ReturnsAsync(doc);
+        _shareRepo.Setup(r => r.ReplaceAsync(It.IsAny<ShareCodeDocument>()))
+            .ReturnsAsync((ShareCodeDocument d) => d);
+
+        var result = await _sut.RevokeAsync("sc-1", "auth0|owner", isShareCodeUser: false, authenticatedShareId: null);
+
+        Assert.True(result);
+        Assert.NotNull(doc.RevokedAt);
+    }
+
+    [Fact]
+    public async Task RevokeAsync_NotSubscriberJwt_ThrowsForbidden()
+    {
+        _userService.Setup(s => s.RequireSubscriberAsync("auth0|free"))
+            .ThrowsAsync(new ForbiddenException("Sharing requires an active subscription."));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.RevokeAsync("sc-1", "auth0|free", isShareCodeUser: false, authenticatedShareId: null));
+        _shareRepo.Verify(r => r.GetByIdAndOwnerAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RevokeAsync_NotFound_ReturnsFalse()
+    {
+        _userService.Setup(s => s.RequireSubscriberAsync("auth0|owner")).Returns(Task.CompletedTask);
+        _shareRepo.Setup(r => r.GetByIdAndOwnerAsync("missing", "auth0|owner"))
+            .ReturnsAsync((ShareCodeDocument?)null);
+
+        var result = await _sut.RevokeAsync("missing", "auth0|owner", isShareCodeUser: false, authenticatedShareId: null);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task RevokeAsync_ShareCodeUserRevokesOwnCode_Succeeds()
     {
         var doc = new ShareCodeDocument
         {
@@ -199,20 +252,20 @@ public class ShareServiceTests
         _shareRepo.Setup(r => r.ReplaceAsync(It.IsAny<ShareCodeDocument>()))
             .ReturnsAsync((ShareCodeDocument d) => d);
 
-        var result = await _sut.RevokeAsync("sc-1", "auth0|owner");
+        var result = await _sut.RevokeAsync("sc-1", "auth0|owner", isShareCodeUser: true, authenticatedShareId: "sc-1");
 
         Assert.True(result);
         Assert.NotNull(doc.RevokedAt);
+        _userService.Verify(s => s.RequireSubscriberAsync(It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
-    public async Task RevokeAsync_NotFound_ReturnsFalse()
+    public async Task RevokeAsync_ShareCodeUserRevokesOtherCode_ThrowsForbidden()
     {
-        _shareRepo.Setup(r => r.GetByIdAndOwnerAsync("missing", "auth0|owner"))
-            .ReturnsAsync((ShareCodeDocument?)null);
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.RevokeAsync("sc-other", "auth0|owner", isShareCodeUser: true, authenticatedShareId: "sc-1"));
 
-        var result = await _sut.RevokeAsync("missing", "auth0|owner");
-
-        Assert.False(result);
+        _shareRepo.Verify(r => r.GetByIdAndOwnerAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        _userService.Verify(s => s.RequireSubscriberAsync(It.IsAny<string>()), Times.Never);
     }
 }

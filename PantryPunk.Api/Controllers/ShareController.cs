@@ -63,21 +63,38 @@ public class ShareController : ControllerBase
     [Authorize(Policy = "RegisteredUser")]
     public async Task<IActionResult> GetShareCodes()
     {
-        var userId = User.GetUserId();
-        var result = await _shareService.GetShareCodesAsync(userId);
-        return Ok(new { sharedUsers = result });
+        try
+        {
+            var userId = User.GetUserId();
+            var result = await _shareService.GetShareCodesAsync(userId);
+            return Ok(new { sharedUsers = result });
+        }
+        catch (ForbiddenException ex)
+        {
+            return StatusCode(403, new ErrorResponse { Error = ex.Message });
+        }
     }
 
     [HttpDelete("{shareId}")]
-    [Authorize(Policy = "RegisteredUser")]
+    [Authorize]
     public async Task<IActionResult> RevokeShareCode(string shareId)
     {
-        var userId = User.GetUserId();
-        var revoked = await _shareService.RevokeAsync(shareId, userId);
+        try
+        {
+            var userId = User.GetUserId();
+            var isGuest = User.IsShareCodeUser();
+            var authedShareId = User.GetShareId();
 
-        if (!revoked)
-            return NotFound(new ErrorResponse { Error = "Share code not found." });
+            var revoked = await _shareService.RevokeAsync(shareId, userId, isGuest, authedShareId);
 
-        return NoContent();
+            if (!revoked)
+                return NotFound(new ErrorResponse { Error = "Share code not found." });
+
+            return NoContent();
+        }
+        catch (ForbiddenException ex)
+        {
+            return StatusCode(403, new ErrorResponse { Error = ex.Message });
+        }
     }
 }

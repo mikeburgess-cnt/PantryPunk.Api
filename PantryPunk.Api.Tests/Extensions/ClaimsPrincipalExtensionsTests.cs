@@ -59,6 +59,26 @@ public class ClaimsPrincipalExtensionsTests
         Assert.False(principal.IsShareCodeUser());
     }
 
+    [Fact]
+    public void GetShareId_WithClaim_ReturnsValue()
+    {
+        var principal = CreatePrincipal("ShareId", "sc-1");
+
+        var result = principal.GetShareId();
+
+        Assert.Equal("sc-1", result);
+    }
+
+    [Fact]
+    public void GetShareId_WithoutClaim_ReturnsNull()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity());
+
+        var result = principal.GetShareId();
+
+        Assert.Null(result);
+    }
+
     private static ClaimsPrincipal CreatePrincipal(string claimType, string claimValue)
     {
         var identity = new ClaimsIdentity(new[] { new Claim(claimType, claimValue) }, "Test");

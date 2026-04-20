@@ -59,11 +59,12 @@ public class ShareCodeAuthMiddleware
             return;
         }
 
-        // Inject synthetic claims principal with owner's userId and recipient name
+        // Inject synthetic claims principal with owner's userId, recipient name, and share code id
         var claims = new[]
         {
             new Claim(ClaimTypes.NameIdentifier, document.OwnerUserId),
-            new Claim("RecipientName", document.RecipientName!)
+            new Claim("RecipientName", document.RecipientName!),
+            new Claim("ShareId", document.Id)
         };
 
         var identity = new ClaimsIdentity(claims, "ShareCode");

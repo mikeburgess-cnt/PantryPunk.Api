@@ -15,6 +15,11 @@ public static class ClaimsPrincipalExtensions
         return principal.FindFirst("RecipientName")?.Value;
     }
 
+    public static string? GetShareId(this ClaimsPrincipal principal)
+    {
+        return principal.FindFirst("ShareId")?.Value;
+    }
+
     public static bool IsShareCodeUser(this ClaimsPrincipal principal)
     {
         return principal.GetRecipientName() != null;
