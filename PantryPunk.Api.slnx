@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="PantryPunk.Api/PantryPunk.Api.csproj" />
+  <Project Path="PantryPunk.Api.Tests/PantryPunk.Api.Tests.csproj" />
+</Solution>

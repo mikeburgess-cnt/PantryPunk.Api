@@ -1,0 +1,84 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using PantryPunk.Api.Extensions;
+using PantryPunk.Api.Models.Requests;
+using PantryPunk.Api.Models.Responses;
+using PantryPunk.Api.Services;
+
+namespace PantryPunk.Api.Controllers;
+
+[ApiController]
+[Route("api/shopping-list")]
+[Authorize]
+public class ShoppingListController : ControllerBase
+{
+    private readonly ListService _listService;
+
+    public ShoppingListController(ListService listService)
+    {
+        _listService = listService;
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetList()
+    {
+        var userId = User.GetUserId();
+        var result = await _listService.GetListAsync(userId);
+
+        if (result == null)
+            return NotFound(new ErrorResponse { Error = "Shopping list not found." });
+
+        return Ok(result);
+    }
+
+    [HttpPost("items")]
+    public async Task<IActionResult> AddItem([FromBody] AddItemRequest request)
+    {
+        var description = request.Description?.Trim();
+        if (string.IsNullOrEmpty(description))
+            return BadRequest(new ErrorResponse { Error = "Description is required." });
+
+        request.Description = description;
+
+        var userId = User.GetUserId();
+        var addedBy = await _listService.ResolveAddedByAsync(userId, User.GetRecipientName());
+        if (addedBy == null)
+            return NotFound(new ErrorResponse { Error = "User not found." });
+
+        var result = await _listService.AddItemAsync(userId, request, addedBy);
+        if (result == null)
+            return NotFound(new ErrorResponse { Error = "Shopping list not found." });
+
+        return Created($"/api/list/items/{result.Id}", result);
+    }
+
+    [HttpPut("items/{itemId}")]
+    public async Task<IActionResult> UpdateItem(string itemId, [FromBody] UpdateItemRequest request)
+    {
+        var description = request.Description?.Trim();
+        if (string.IsNullOrEmpty(description))
+            return BadRequest(new ErrorResponse { Error = "Description is required." });
+
+        request.Description = description;
+
+        var userId = User.GetUserId();
+        var result = await _listService.UpdateItemAsync(userId, itemId, request);
+
+        if (result == null)
+            return NotFound(new ErrorResponse { Error = "Item not found." });
+
+        return Ok(result);
+    }
+
+    [HttpDelete("items/{itemId}")]
+    public async Task<IActionResult> DeleteItem(string itemId)
+    {
+        var userId = User.GetUserId();
+        var deleted = await _listService.DeleteItemAsync(userId, itemId);
+
+        if (!deleted)
+            return NotFound(new ErrorResponse { Error = "Item not found." });
+
+        return NoContent();
+    }
+}

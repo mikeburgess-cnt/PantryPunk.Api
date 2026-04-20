@@ -1,0 +1,368 @@
+{
+	"info": {
+		"name": "PantryPunk API",
+		"description": "API collection for the PantryPunk backend. One folder per controller.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "https://localhost:7172",
+			"type": "string"
+		},
+		{
+			"key": "apiKey",
+			"value": "a1f8c3d9e7b24560f3a9d8c1e5b7024f6d3a8e1c9b5f2074d6e9a3c1b8f50d2e",
+			"type": "string",
+			"description": "Matches ApiKeyMiddleware.ValidApiKey. Temporary until OAuth replaces it."
+		},
+		{
+			"key": "shareCode",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "itemId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "shareId",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"auth": {
+		"type": "noauth"
+	},
+	"header": [
+		{
+			"key": "X-Api-Key",
+			"value": "{{apiKey}}",
+			"description": "Required by ApiKeyMiddleware on every non-health request."
+		}
+	],
+	"item": [
+		{
+			"name": "User",
+			"description": "UserController — api/users. [Authorize(Policy=RegisteredUser)].",
+			"item": [
+				{
+					"name": "UpsertProfile",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"displayName\": \"Mike\",\n  \"email\": \"mike@example.com\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/users/profile",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "users", "profile"]
+						},
+						"description": "Creates or updates the caller's profile. Call once after starting in Dev to seed the UserDocument for the DevAuth user."
+					}
+				},
+				{
+					"name": "GetProfile",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/users/profile",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "users", "profile"]
+						},
+						"description": "Returns the current user's profile. 404 if not yet upserted."
+					}
+				},
+				{
+					"name": "UpdateSubscription",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"isSubscriber\": true\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/users/subscription",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "users", "subscription"]
+						},
+						"description": "Syncs IsSubscriber after a RevenueCat restore purchase."
+					}
+				}
+			]
+		},
+		{
+			"name": "ShoppingList",
+			"description": "ShoppingListController — api/shopping-list. [Authorize] (JWT or X-Share-Code).",
+			"item": [
+				{
+					"name": "GetList",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/shopping-list",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "shopping-list"]
+						},
+						"description": "Returns the full list for the authenticated user or guest."
+					}
+				},
+				{
+					"name": "AddItem",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"description\": \"Bananas\",\n  \"quantity\": null,\n  \"notes\": null\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/shopping-list/items",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "shopping-list", "items"]
+						},
+						"description": "Adds a new item. addedBy is resolved server-side from the caller's identity."
+					}
+				},
+				{
+					"name": "UpdateItem",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"description\": \"Bananas\",\n  \"quantity\": 4,\n  \"notes\": \"Ripe ones\",\n  \"photoUrl\": null\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/shopping-list/items/{{itemId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "shopping-list", "items", "{{itemId}}"]
+						},
+						"description": "Updates an existing item on the list."
+					}
+				},
+				{
+					"name": "DeleteItem",
+					"request": {
+						"method": "DELETE",
+						"url": {
+							"raw": "{{baseUrl}}/api/shopping-list/items/{{itemId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "shopping-list", "items", "{{itemId}}"]
+						},
+						"description": "Deletes an item from the list."
+					}
+				}
+			]
+		},
+		{
+			"name": "Image",
+			"description": "ImageController — api/list/items. [Authorize]. Rate-limited via the \"ai\" policy.",
+			"item": [
+				{
+					"name": "UploadPhoto",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"type": "file",
+									"src": "",
+									"description": "JPEG image of a grocery item (max 2MB)."
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/list/items/photo",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "list", "items", "photo"]
+						},
+						"description": "Uploads a photo, recognises it via Claude, and adds the item to the list. Do not set Content-Type manually — Postman sets the multipart boundary."
+					}
+				}
+			]
+		},
+		{
+			"name": "Voice",
+			"description": "VoiceController — api/list/items. [Authorize]. Rate-limited via the \"ai\" policy.",
+			"item": [
+				{
+					"name": "UploadVoice",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "audio",
+									"type": "file",
+									"src": "",
+									"description": "m4a/mp4 audio recording (max 2MB)."
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/list/items/voice",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "list", "items", "voice"]
+						},
+						"description": "Transcribes audio via Azure AI Speech, extracts items via Claude, and adds them to the list."
+					}
+				}
+			]
+		},
+		{
+			"name": "Share",
+			"description": "ShareController — api/share. Per-action auth (RegisteredUser or AllowAnonymous).",
+			"item": [
+				{
+					"name": "GenerateCode",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"recipientName\": \"Natalie\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/share/generate-code",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "share", "generate-code"]
+						},
+						"description": "Generates a 6-char share code. Subscriber-only; returns 403 otherwise, 409 if a code already exists for this recipient."
+					}
+				},
+				{
+					"name": "ConfirmCode",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"{{shareCode}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/share/confirm-code",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "share", "confirm-code"]
+						},
+						"description": "Public (AllowAnonymous). Guest submits a code to join a shared list. 410 if expired or revoked."
+					}
+				},
+				{
+					"name": "GetShareCodes",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/share",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "share"]
+						},
+						"description": "Returns all active share codes created by the caller."
+					}
+				},
+				{
+					"name": "RevokeShareCode",
+					"request": {
+						"method": "DELETE",
+						"url": {
+							"raw": "{{baseUrl}}/api/share/{{shareId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "share", "{{shareId}}"]
+						},
+						"description": "Soft-deletes a share code. The guest loses access on their next request."
+					}
+				}
+			]
+		},
+		{
+			"name": "Feature",
+			"description": "FeatureController — api/features. [Authorize(Policy=RegisteredUser)].",
+			"item": [
+				{
+					"name": "GetFeatures",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/features",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "features"]
+						},
+						"description": "Returns the evaluated feature flags for the current user."
+					}
+				}
+			]
+		},
+		{
+			"name": "Webhook",
+			"description": "WebhookController — api/webhooks. External callers only; no controller-level Authorize.",
+			"item": [
+				{
+					"name": "RevenueCat",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-RevenueCat-Signature",
+								"value": "",
+								"description": "Base64 HMAC-SHA256 of the request body using RevenueCat:WebhookSecret."
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"event\": {\n    \"type\": \"INITIAL_PURCHASE\",\n    \"app_user_id\": \"auth0|devuser\",\n    \"expiration_at_ms\": 1744531200000\n  }\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/webhooks/revenuecat",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "webhooks", "revenuecat"]
+						},
+						"description": "Receives RevenueCat subscription lifecycle events. Handles INITIAL_PURCHASE, RENEWAL, CANCELLATION, EXPIRATION, BILLING_ISSUE."
+					}
+				}
+			]
+		}
+	]
+}
