@@ -95,7 +95,7 @@ public class ShareService
     {
         await _userService.RequireSubscriberAsync(userId);
         var documents = await _shareRepository.GetByOwnerUserIdAsync(userId);
-        return documents.Select(MapToListResponse).ToList();
+        return documents.Where(d => d.Confirmed).Select(MapToListResponse).ToList();
     }
 
     public async Task<bool> RevokeAsync(string shareId, string userId, bool isShareCodeUser, string? authenticatedShareId)

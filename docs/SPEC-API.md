@@ -1002,7 +1002,7 @@ Non-subscriber submits a code to join a shared list **and provides their own dis
 
 #### `GET /api/share`
 
-Returns all share codes created by the subscriber (for the Share It screen list). Excludes revoked codes. Subscribers only — share-code guests are rejected.
+Returns share codes created by the subscriber (for the Share It screen list). Excludes revoked codes and unconfirmed (pending) codes — only codes a guest has actually accepted are returned. Subscribers only — share-code guests are rejected.
 
 **Auth:** Auth0 JWT + isSubscriber
 
@@ -1010,8 +1010,9 @@ Returns all share codes created by the subscriber (for the Share It screen list)
 1. Extract `userId` from the Auth0 JWT `sub` claim. Share-code guests (who authenticate via `X-Share-Code`) are rejected by the `RegisteredUser` policy and never reach this handler.
 2. Load the caller's `UserDocument` and return `403 Forbidden` with `{ "error": "Sharing requires an active subscription." }` if `isSubscriber` is false.
 3. Query the `ShareCodes` container for all documents where `ownerUserId == userId` and `revokedAt == null`. (Note: the container is partitioned by `/code`, so this is a cross-partition query scoped by `ownerUserId`. At household scale this is negligible — typically < 10 documents.)
-4. Map each `ShareCodeDocument` to the response shape.
-5. Return `200 OK` with the array sorted by `createdAt` ascending.
+4. Filter out documents where `confirmed == false` (pending/unaccepted codes are not returned).
+5. Map each remaining `ShareCodeDocument` to the response shape.
+6. Return `200 OK` with the array sorted by `createdAt` ascending.
 
 **Response `200 OK`:**
 ```json
@@ -1030,7 +1031,7 @@ Returns all share codes created by the subscriber (for the Share It screen list)
 }
 ```
 
-`recipientName` is `null` for codes that have been generated but not yet confirmed. Clients should render these as a "pending" state.
+Only confirmed codes are returned, so `confirmed` is always `true` and `recipientName` is always populated. Unconfirmed codes remain retrievable via `POST /api/share/generate-code` (which returns the freshly generated code) but do not appear in this list until a guest confirms them.
 
 ---
 
