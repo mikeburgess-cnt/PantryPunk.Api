@@ -109,8 +109,10 @@ public class ListService
     }
 
     // Create-new-first ordering: if the second write (marking the old list completed) fails,
-    // a retry sees the new empty list and rejects with EmptyListException. Operator must clean
-    // up the orphaned active-flagged old document manually.
+    // a retry sees the new empty list and rejects with EmptyListException. The failure leaves
+    // two active-flagged documents in the same partition; GetActiveByOwnerUserIdAsync breaks
+    // the tie by createdAt DESC so the newer empty list wins. Operator cleanup is still
+    // advisable to restore the single-active invariant.
     public async Task<ShoppingListResponse?> CompleteAsync(string userId)
     {
         var active = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
@@ -120,11 +122,10 @@ public class ListService
             throw new EmptyListException("Cannot complete an empty list.");
 
         var now = DateTime.UtcNow;
-        var newListId = Guid.NewGuid().ToString();
         var newList = new ShoppingListDocument
         {
-            Id = newListId,
-            ListId = newListId,
+            Id = Guid.NewGuid().ToString(),
+            ListId = active.ListId,
             OwnerUserId = userId,
             Items = new List<ShoppingItemDocument>(),
             Status = ShoppingListStatus.Active,

@@ -18,7 +18,7 @@ public class ListRepository
     public virtual async Task<ShoppingListDocument?> GetActiveByOwnerUserIdAsync(string ownerUserId)
     {
         var query = new QueryDefinition(
-                "SELECT * FROM c WHERE c.ownerUserId = @ownerUserId AND (NOT IS_DEFINED(c.status) OR c.status = \"active\")")
+                "SELECT * FROM c WHERE c.ownerUserId = @ownerUserId AND (NOT IS_DEFINED(c.status) OR c.status = \"active\") ORDER BY c.createdAt DESC")
             .WithParameter("@ownerUserId", ownerUserId);
 
         using var iterator = _container.GetItemQueryIterator<ShoppingListDocument>(query);

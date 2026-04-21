@@ -350,9 +350,11 @@ Stores registered user profiles.
 
 #### `ShoppingLists`
 
-One document per user list. Items are embedded as an array within the list document — no separate items container needed at this scale.
+One active list per household, plus one document per historical completion. Items are embedded as an array within the list document — no separate items container needed at this scale.
 
 - **Partition key:** `/listId`
+- `listId` is a **stable per-household identifier**, assigned once when the user's profile is first created and never rotated. Multiple documents may share the same `listId`: exactly one with `status = "active"`, any number with `status = "completed"`. This keeps all of a household's history in a single partition and, critically, keeps share codes (which bind to `listId`) valid across completions.
+- `id` is per-document and unique within the partition.
 
 ```json
 {
@@ -713,11 +715,13 @@ Marks the user's active shopping list as completed and creates a fresh empty act
 1. Read `userId` from the claims principal.
 2. Retrieve the active `ShoppingListDocument` (same query as `GET /api/shopping-list`). Return `404 Not Found` if none exists.
 3. If the active list has zero items, return `400 Bad Request` with `"Cannot complete an empty list."`.
-4. Create a new `ShoppingListDocument` for the same `ownerUserId` with a fresh `id`/`listId`, empty `items`, `status = "active"`, and `createdAt`/`updatedAt = DateTime.UtcNow`. Write it to the container.
+4. Create a new `ShoppingListDocument` for the same `ownerUserId` with a fresh `id` but **reusing the existing `listId`** (so the new document lands in the same partition as the one being completed). Empty `items`, `status = "active"`, and `createdAt`/`updatedAt = DateTime.UtcNow`. Write it to the container.
 5. On the previously active list, set `status = "completed"`, `completedAt = DateTime.UtcNow`, `updatedAt = DateTime.UtcNow`. Replace it in the container.
 6. Return `200 OK` with the new empty active list (same shape as `GET /api/shopping-list`).
 
-> **Failure mode:** the order is create-new-first. If step 5 fails after step 4 succeeds, two documents may briefly carry active-equivalent state for the same user; a retry will see the new empty list and reject with `400`. Surface the error and log it for operator follow-up.
+> **Why reuse `listId`:** share codes bind to `listId`. Minting a fresh `listId` on each completion would orphan every active share code for that household. Reusing `listId` keeps guest access seamless across trips and leaves share-code bookkeeping untouched.
+
+> **Failure mode:** the order is create-new-first. If step 5 fails after step 4 succeeds, two `status = "active"` documents coexist in the same partition. The active-list query breaks the tie with `ORDER BY c.createdAt DESC`, so the newer empty list wins and a retry will reject with `400` (empty). Surface the error and log it for operator follow-up to re-mark the older document `completed`.
 
 **Response `200 OK`:** The new (empty) active list, in the same shape as `GET /api/shopping-list`.
 
@@ -924,7 +928,7 @@ Generates a unique share code for a subscriber. The recipient's name is **not** 
 1. Extract `userId` from the Auth0 JWT `sub` claim.
 2. Retrieve the `UserDocument` from the `Users` container using `userId` as the partition key. Return `404 Not Found` if no user document exists.
 3. Check `userDocument.IsSubscriber`. If `false`, return `403 Forbidden` with `{ "error": "Sharing requires an active subscription." }`.
-4. Retrieve the active `ShoppingListDocument` from the `ShoppingLists` container where `ownerUserId == userId` AND (`status` is undefined OR `status == "active"`). Return `404 Not Found` if no active list exists. The `listId` stored on the share code document is informational; share-code guests are resolved to `ownerUserId` and always read the user's currently active list.
+4. Retrieve the active `ShoppingListDocument` from the `ShoppingLists` container where `ownerUserId == userId` AND (`status` is undefined OR `status == "active"`). Return `404 Not Found` if no active list exists. The `listId` is a stable per-household identifier that survives completions (see `ShoppingLists` schema notes), so the value captured here remains the partition the share code will resolve into for the rest of its life.
 5. Capture the `listId` from the retrieved `ShoppingListDocument`.
 6. Generate a 6-character uppercase alphanumeric share code using `RandomNumberGenerator` (e.g. `6Y812C`). Use only characters `A-Z` and `0-9` to avoid ambiguous characters (`0`/`O`, `1`/`I`/`L`).
 7. Query the `ShareCodes` container to check whether an active (non-revoked, non-expired) code with the same value already exists. If a collision is found, regenerate and re-check. Retry up to 5 times. If a unique code cannot be generated after 5 attempts, return `409 Conflict` with `{ "error": "Could not generate a unique code. Please try again." }`.
