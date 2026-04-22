@@ -27,6 +27,27 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         {
             NameClaimType = System.Security.Claims.ClaimTypes.NameIdentifier
         };
+        options.Events = new JwtBearerEvents
+        {
+            OnAuthenticationFailed = ctx =>
+            {
+                var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("Auth0");
+                logger.LogWarning(ctx.Exception,
+                    "JWT auth failed: {Message}. AuthHeader present: {HasHeader}",
+                    ctx.Exception.Message,
+                    ctx.Request.Headers.ContainsKey("Authorization"));
+                return Task.CompletedTask;
+            },
+            OnTokenValidated = ctx =>
+            {
+                var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("Auth0");
+                logger.LogInformation("JWT validated for sub {Sub}",
+                    ctx.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value);
+                return Task.CompletedTask;
+            }
+        };
     });
 
 builder.Services.AddAuthorization(options =>
@@ -96,8 +117,8 @@ if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 
-// API key validation (temporary — will be replaced by OAuth)
-app.UseMiddleware<ApiKeyMiddleware>();
+// API key validation removed — replaced by Auth0 JWT (see AddJwtBearer above) + ShareCodeAuthMiddleware.
+// app.UseMiddleware<ApiKeyMiddleware>();
 
 // Azure App Configuration refresh (must be before UseRouting)
 if (!string.IsNullOrEmpty(builder.Configuration["AzureAppConfiguration:Endpoint"]))

@@ -9,7 +9,8 @@
       "Bash(dotnet test:*)",
       "Bash(ls *)",
       "Bash(xargs grep *)",
-      "Bash(dotnet package *)"
+      "Bash(dotnet package *)",
+      "Bash(dotnet user-secrets init *)"
     ]
   }
 }
