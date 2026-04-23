@@ -43,6 +43,15 @@ public class VoiceController : ControllerBase
         if (audio.Length > 2 * 1024 * 1024)
             return BadRequest(new ErrorResponse { Error = "Audio must be under 2MB." });
 
+        // Magic-byte verification — do not trust client-supplied Content-Type alone.
+        using (var sniffStream = audio.OpenReadStream())
+        {
+            var header = new byte[16];
+            var read = await FillBufferAsync(sniffStream, header);
+            if (read < 12 || !AudioFileValidator.IsIsoBmff(header))
+                return BadRequest(new ErrorResponse { Error = "Audio does not match accepted m4a/mp4 signature." });
+        }
+
         await _userService.EnsureExistsAsync(User);
         var userId = User.GetUserId();
         await _listService.GetOrCreateActiveAsync(userId);
@@ -85,5 +94,17 @@ public class VoiceController : ControllerBase
             return NotFound(new ErrorResponse { Error = "Shopping list not found." });
 
         return Created("/api/list", new VoiceItemsResponse { Items = result });
+    }
+
+    private static async Task<int> FillBufferAsync(Stream stream, Memory<byte> buffer)
+    {
+        var total = 0;
+        while (total < buffer.Length)
+        {
+            var n = await stream.ReadAsync(buffer.Slice(total));
+            if (n == 0) break;
+            total += n;
+        }
+        return total;
     }
 }
