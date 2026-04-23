@@ -97,21 +97,6 @@ public class UserService
         return document == null ? null : MapToResponse(document);
     }
 
-    public virtual async Task<UserProfileResponse?> UpdateSubscriptionAsync(string userId, UpdateSubscriptionRequest request)
-    {
-        var document = await _userRepository.GetByIdAsync(userId);
-        if (document == null) return null;
-
-        document.IsSubscriber = request.IsSubscriber;
-        document.UpdatedAt = DateTime.UtcNow;
-
-        if (request.IsSubscriber && document.SubscribedAt == null)
-            document.SubscribedAt = DateTime.UtcNow;
-
-        await _userRepository.UpsertAsync(document);
-        return MapToResponse(document);
-    }
-
     public virtual async Task<UserDocument?> GetDocumentAsync(string userId)
     {
         return await _userRepository.GetByIdAsync(userId);

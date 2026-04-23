@@ -53,19 +53,4 @@ public class UserController : ControllerBase
         return Ok(result);
     }
 
-    [HttpPost("subscription")]
-    [ProducesResponseType<UserProfileResponse>(StatusCodes.Status200OK)]
-    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> UpdateSubscription([FromBody] UpdateSubscriptionRequest request)
-    {
-        var userId = User.GetUserId();
-        var result = await _userService.UpdateSubscriptionAsync(userId, request);
-
-        if (result == null)
-            return NotFound(new ErrorResponse { Error = "User not found." });
-
-        return Ok(result);
-    }
 }
