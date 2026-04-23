@@ -1,5 +1,6 @@
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
 using PantryPunk.Api.Extensions;
 using PantryPunk.Api.Infrastructure;
@@ -149,6 +150,18 @@ if (!string.IsNullOrEmpty(builder.Configuration["AzureAppConfiguration:Endpoint"
 {
     app.UseAzureAppConfiguration();
 }
+
+// Trust the single XFF hop from the Azure App Service front-end proxy.
+// KnownNetworks/KnownProxies are cleared so only the platform's XFF hop is unwrapped —
+// clients cannot spoof the header by adding their own.
+var forwardedOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+    ForwardLimit = 1
+};
+forwardedOptions.KnownIPNetworks.Clear();
+forwardedOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedOptions);
 
 app.UseAuthentication();
 app.UseMiddleware<ShareCodeAuthMiddleware>();
