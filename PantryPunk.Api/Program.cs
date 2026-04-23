@@ -79,6 +79,14 @@ builder.Services.AddOpenApi();
 // Health checks
 builder.Services.AddHealthChecks();
 
+// HSTS (Strict-Transport-Security)
+builder.Services.AddHsts(options =>
+{
+    options.MaxAge = TimeSpan.FromDays(365);
+    options.IncludeSubDomains = true;
+    options.Preload = true;
+});
+
 // Rate limiting for AI endpoints
 builder.Services.AddRateLimiter(options =>
 {
@@ -115,7 +123,26 @@ if (app.Environment.IsDevelopment())
 if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
+    app.UseHsts();
 }
+
+app.Use(async (ctx, next) =>
+{
+    var h = ctx.Response.Headers;
+    h["X-Content-Type-Options"] = "nosniff";
+    h["X-Frame-Options"] = "DENY";
+    h["Referrer-Policy"] = "no-referrer";
+    h["Permissions-Policy"] =
+        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()";
+    h["Cross-Origin-Opener-Policy"] = "same-origin";
+    h["Cross-Origin-Resource-Policy"] = "same-origin";
+    // API never renders HTML — strict CSP. Exempt Swagger/OpenAPI paths so Dev UI renders.
+    if (!ctx.Request.Path.StartsWithSegments("/swagger") && !ctx.Request.Path.StartsWithSegments("/openapi"))
+    {
+        h["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'";
+    }
+    await next();
+});
 
 // Azure App Configuration refresh (must be before UseRouting)
 if (!string.IsNullOrEmpty(builder.Configuration["AzureAppConfiguration:Endpoint"]))
