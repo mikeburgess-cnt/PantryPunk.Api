@@ -117,9 +117,6 @@ if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 
-// API key validation removed — replaced by Auth0 JWT (see AddJwtBearer above) + ShareCodeAuthMiddleware.
-// app.UseMiddleware<ApiKeyMiddleware>();
-
 // Azure App Configuration refresh (must be before UseRouting)
 if (!string.IsNullOrEmpty(builder.Configuration["AzureAppConfiguration:Endpoint"]))
 {
