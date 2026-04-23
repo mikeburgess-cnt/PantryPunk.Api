@@ -612,23 +612,6 @@ Returns the current user's profile.
 
 ---
 
-#### `POST /api/users/subscription`
-
-Syncs subscription status after a RevenueCat restore purchase.
-
-**Auth:** Auth0 JWT
-
-**Request:**
-```json
-{
-  "isSubscriber": true
-}
-```
-
-**Response `200 OK`:** Returns updated user profile (same shape as GET profile).
-
----
-
 ### Shopping List
 
 > **Authentication note for all list endpoints:** `userId` resolution is handled by authentication middleware before requests reach controllers. For JWT requests, `JwtBearerAuthentication` extracts `userId` from the `sub` claim. For share code requests, `ShareCodeAuthMiddleware` validates the code (checks not expired, not revoked), resolves `ownerUserId`, and injects it as a synthetic claim. Controllers read `userId` from the claims principal — they do not repeat this validation.
