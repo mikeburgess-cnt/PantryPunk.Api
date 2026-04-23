@@ -26,11 +26,7 @@ public class UserController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> UpsertProfile([FromBody] UpdateProfileRequest request)
     {
-        var displayName = request.DisplayName?.Trim();
-        if (string.IsNullOrEmpty(displayName))
-            return BadRequest(new ErrorResponse { Error = "Display name is required." });
-
-        request.DisplayName = displayName;
+        request.DisplayName = request.DisplayName.Trim();
 
         var userId = User.GetUserId();
         var result = await _userService.UpsertProfileAsync(userId, request);

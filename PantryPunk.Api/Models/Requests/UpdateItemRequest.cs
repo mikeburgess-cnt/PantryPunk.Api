@@ -4,12 +4,16 @@ namespace PantryPunk.Api.Models.Requests;
 
 public class UpdateItemRequest
 {
-    [Required]
+    [Required, StringLength(256, MinimumLength = 1)]
     public string Description { get; set; } = null!;
 
+    [Range(1, 1000)]
     public int? Quantity { get; set; }
 
+    [StringLength(1024)]
     public string? Notes { get; set; }
 
+    [StringLength(2048)]
+    [RegularExpression("^https://.+", ErrorMessage = "PhotoUrl must be an https URL.")]
     public string? PhotoUrl { get; set; }
 }

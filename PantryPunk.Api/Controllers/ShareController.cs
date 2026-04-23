@@ -51,14 +51,7 @@ public class ShareController : ControllerBase
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status410Gone)]
     public async Task<IActionResult> ConfirmCode([FromBody] ConfirmShareCodeRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Code))
-            return BadRequest(new ErrorResponse { Error = "Code is required." });
-
-        var trimmedName = request.RecipientName?.Trim();
-        if (string.IsNullOrEmpty(trimmedName))
-            return BadRequest(new ErrorResponse { Error = "Recipient name is required." });
-
-        request.RecipientName = trimmedName;
+        request.RecipientName = request.RecipientName.Trim();
 
         var (response, error) = await _shareService.ConfirmCodeAsync(request);
 
