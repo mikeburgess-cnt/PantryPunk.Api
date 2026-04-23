@@ -88,17 +88,40 @@ builder.Services.AddHsts(options =>
     options.Preload = true;
 });
 
-// Rate limiting for AI endpoints
+// Rate limiting
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = 429;
 
+    // Per-user AI limiter (image and voice endpoints)
     options.AddPolicy("ai", context =>
     {
         var userId = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "anonymous";
         return RateLimitPartition.GetFixedWindowLimiter(userId, _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = builder.Configuration.GetValue("PantryPunk:RateLimit:AiRequestsPerMinute", 30),
+            Window = TimeSpan.FromMinutes(1)
+        });
+    });
+
+    // Tight per-IP limiter for share-code confirm (unauthenticated, brute-force surface)
+    options.AddPolicy("share-confirm", context =>
+    {
+        var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter($"sc:{ip}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = builder.Configuration.GetValue("PantryPunk:RateLimit:ShareConfirmPerHour", 10),
+            Window = TimeSpan.FromHours(1)
+        });
+    });
+
+    // Global catch-all per-IP limiter — requires H3 (ForwardedHeaders) for real client IP
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
+    {
+        var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter($"g:{ip}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = builder.Configuration.GetValue("PantryPunk:RateLimit:PerIpPerMinute", 120),
             Window = TimeSpan.FromMinutes(1)
         });
     });
@@ -189,6 +212,6 @@ app.UseExceptionHandler(errorApp =>
 });
 
 app.MapControllers();
-app.MapHealthChecks("/health");
+app.MapHealthChecks("/health").DisableRateLimiting();
 
 app.Run();

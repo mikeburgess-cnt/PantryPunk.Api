@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using PantryPunk.Api.Extensions;
 using PantryPunk.Api.Models.Requests;
 using PantryPunk.Api.Models.Responses;
@@ -44,6 +45,7 @@ public class ShareController : ControllerBase
 
     [HttpPost("confirm-code")]
     [AllowAnonymous]
+    [EnableRateLimiting("share-confirm")]
     [ProducesResponseType<ShareCodeResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status410Gone)]
