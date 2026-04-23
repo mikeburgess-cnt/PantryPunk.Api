@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using PantryPunk.Api.Extensions;
 using PantryPunk.Api.Models.Documents;
 using PantryPunk.Api.Models.Requests;
 using PantryPunk.Api.Models.Responses;
@@ -64,6 +66,29 @@ public class UserService
         }
 
         return MapToResponse(document);
+    }
+
+    public virtual async Task<UserDocument?> EnsureExistsAsync(ClaimsPrincipal principal)
+    {
+        if (principal.IsShareCodeUser()) return null;
+
+        var userId = principal.GetUserId();
+        var existing = await _userRepository.GetByIdAsync(userId);
+        if (existing != null) return existing;
+
+        var now = DateTime.UtcNow;
+        var document = new UserDocument
+        {
+            Id = userId,
+            UserId = userId,
+            DisplayName = principal.GetNameClaim() ?? string.Empty,
+            Email = principal.GetEmailClaim() ?? string.Empty,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        await _userRepository.UpsertAsync(document);
+        _logger.LogInformation("Auto-created user {UserId} from JWT claims", userId);
+        return document;
     }
 
     public virtual async Task<UserProfileResponse?> GetProfileAsync(string userId)

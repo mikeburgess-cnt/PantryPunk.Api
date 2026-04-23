@@ -15,11 +15,13 @@ public class VoiceController : ControllerBase
 {
     private readonly VoiceRecognitionService _voiceRecognitionService;
     private readonly ListService _listService;
+    private readonly UserService _userService;
 
-    public VoiceController(VoiceRecognitionService voiceRecognitionService, ListService listService)
+    public VoiceController(VoiceRecognitionService voiceRecognitionService, ListService listService, UserService userService)
     {
         _voiceRecognitionService = voiceRecognitionService;
         _listService = listService;
+        _userService = userService;
     }
 
     [HttpPost("voice")]
@@ -41,7 +43,9 @@ public class VoiceController : ControllerBase
         if (audio.Length > 2 * 1024 * 1024)
             return BadRequest(new ErrorResponse { Error = "Audio must be under 2MB." });
 
+        await _userService.EnsureExistsAsync(User);
         var userId = User.GetUserId();
+        await _listService.GetOrCreateActiveAsync(userId);
 
         // Transcribe audio
         string? transcription;

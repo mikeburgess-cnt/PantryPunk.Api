@@ -16,12 +16,31 @@ public class ListService
         _userRepository = userRepository;
     }
 
-    public async Task<ShoppingListResponse?> GetListAsync(string userId)
+    public async Task<ShoppingListResponse> GetListAsync(string userId)
+    {
+        var list = await GetOrCreateActiveAsync(userId);
+        return MapToResponse(list);
+    }
+
+    public async Task<ShoppingListDocument> GetOrCreateActiveAsync(string userId)
     {
         var list = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
-        if (list == null) return null;
+        if (list != null) return list;
 
-        return MapToResponse(list);
+        var now = DateTime.UtcNow;
+        var listId = Guid.NewGuid().ToString();
+        var newList = new ShoppingListDocument
+        {
+            Id = listId,
+            ListId = listId,
+            OwnerUserId = userId,
+            Items = new List<ShoppingItemDocument>(),
+            Status = ShoppingListStatus.Active,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        await _listRepository.CreateAsync(newList);
+        return newList;
     }
 
     public async Task<ShoppingItemResponse?> AddItemAsync(string userId, AddItemRequest request, string addedBy)

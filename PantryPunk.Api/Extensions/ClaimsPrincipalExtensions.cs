@@ -10,6 +10,17 @@ public static class ClaimsPrincipalExtensions
             ?? throw new UnauthorizedAccessException("User ID claim not found.");
     }
 
+    public static string? GetEmailClaim(this ClaimsPrincipal principal)
+    {
+        return principal.FindFirst(ClaimTypes.Email)?.Value
+            ?? principal.FindFirst("email")?.Value;
+    }
+
+    public static string? GetNameClaim(this ClaimsPrincipal principal)
+    {
+        return principal.FindFirst("name")?.Value;
+    }
+
     public static string? GetRecipientName(this ClaimsPrincipal principal)
     {
         return principal.FindFirst("RecipientName")?.Value;

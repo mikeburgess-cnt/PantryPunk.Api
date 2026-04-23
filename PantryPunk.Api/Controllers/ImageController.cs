@@ -18,17 +18,20 @@ public class ImageController : ControllerBase
     private readonly ImageRecognitionService _imageRecognitionService;
     private readonly BlobStorageService _blobStorageService;
     private readonly ListService _listService;
+    private readonly UserService _userService;
     private readonly ImageFileValidator _imageFileValidator;
 
     public ImageController(
         ImageRecognitionService imageRecognitionService,
         BlobStorageService blobStorageService,
         ListService listService,
+        UserService userService,
         ImageFileValidator imageFileValidator)
     {
         _imageRecognitionService = imageRecognitionService;
         _blobStorageService = blobStorageService;
         _listService = listService;
+        _userService = userService;
         _imageFileValidator = imageFileValidator;
     }
 
@@ -48,7 +51,9 @@ public class ImageController : ControllerBase
         if (!validation.IsValid)
             return BadRequest(new ErrorResponse { Error = validation.Error! });
 
+        await _userService.EnsureExistsAsync(User);
         var userId = User.GetUserId();
+        await _listService.GetOrCreateActiveAsync(userId);
         var imageBytes = validation.Bytes!;
         var mediaType = validation.MediaType!;
 
@@ -74,14 +79,6 @@ public class ImageController : ControllerBase
         {
             await _blobStorageService.DeleteAsync(blobName);
             return NotFound(new ErrorResponse { Error = "User not found." });
-        }
-
-        // Add item to list
-        var list = await _listService.GetListAsync(userId);
-        if (list == null)
-        {
-            await _blobStorageService.DeleteAsync(blobName);
-            return NotFound(new ErrorResponse { Error = "Shopping list not found." });
         }
 
         var now = DateTime.UtcNow;

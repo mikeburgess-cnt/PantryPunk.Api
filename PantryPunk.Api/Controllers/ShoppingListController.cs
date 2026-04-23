@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using PantryPunk.Api.Extensions;
 using PantryPunk.Api.Models.Requests;
@@ -14,24 +13,22 @@ namespace PantryPunk.Api.Controllers;
 public class ShoppingListController : ControllerBase
 {
     private readonly ListService _listService;
+    private readonly UserService _userService;
 
-    public ShoppingListController(ListService listService)
+    public ShoppingListController(ListService listService, UserService userService)
     {
         _listService = listService;
+        _userService = userService;
     }
 
     [HttpGet]
     [ProducesResponseType<ShoppingListResponse>(StatusCodes.Status200OK)]
-    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GetList()
     {
+        await _userService.EnsureExistsAsync(User);
         var userId = User.GetUserId();
         var result = await _listService.GetListAsync(userId);
-
-        if (result == null)
-            return NotFound(new ErrorResponse { Error = "Shopping list not found." });
-
         return Ok(result);
     }
 
@@ -48,7 +45,10 @@ public class ShoppingListController : ControllerBase
 
         request.Description = description;
 
+        await _userService.EnsureExistsAsync(User);
         var userId = User.GetUserId();
+        await _listService.GetOrCreateActiveAsync(userId);
+
         var addedBy = await _listService.ResolveAddedByAsync(userId, User.GetRecipientName());
         if (addedBy == null)
             return NotFound(new ErrorResponse { Error = "User not found." });
@@ -73,6 +73,7 @@ public class ShoppingListController : ControllerBase
 
         request.Description = description;
 
+        await _userService.EnsureExistsAsync(User);
         var userId = User.GetUserId();
         var result = await _listService.UpdateItemAsync(userId, itemId, request);
 
@@ -89,6 +90,7 @@ public class ShoppingListController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Complete()
     {
+        await _userService.EnsureExistsAsync(User);
         var userId = User.GetUserId();
         try
         {
@@ -110,6 +112,7 @@ public class ShoppingListController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> DeleteItem(string itemId)
     {
+        await _userService.EnsureExistsAsync(User);
         var userId = User.GetUserId();
         var deleted = await _listService.DeleteItemAsync(userId, itemId);
 
