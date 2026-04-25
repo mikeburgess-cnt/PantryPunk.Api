@@ -52,6 +52,11 @@ az appconfig kv set --name pp-appcs-prod --key 'PantryPunk:Sentinel' --value 2 -
 
 Increment the value each time — the app polls for changes every 5 minutes and reloads all config when the sentinel changes.
 
+## Known security gaps
+
+- **Key Vault, App Configuration, Cosmos DB, and Storage are all publicly reachable over the internet.** Access is gated by AAD/RBAC only — no shared keys or connection strings are accepted. This is a reasonable posture for an initial deployment but not a full defence-in-depth posture.
+- **Full network-level isolation requires:** VNet integration on App Service + Private Endpoints on each resource + `publicNetworkAccess: Disabled` on each resource. This is deferred but should be done before handling sensitive user data at scale.
+
 ## Notes
 
 - **Voice endpoint deferred:** Azure AI Speech (Cognitive Services) is not provisioned here. The `/api/shopping-list/items/voice` endpoint will fail until Speech is added and `AzureSpeech:Key` is seeded in Key Vault.
