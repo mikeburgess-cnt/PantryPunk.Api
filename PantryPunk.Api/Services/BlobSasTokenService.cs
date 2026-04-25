@@ -8,6 +8,7 @@ public class BlobSasTokenService
 {
     private readonly BlobServiceClient _blobServiceClient;
     private readonly string _containerName;
+    private readonly Uri? _publicBaseUrl;
     private readonly ILogger<BlobSasTokenService> _logger;
 
     private UserDelegationKey? _cachedKey;
@@ -22,6 +23,9 @@ public class BlobSasTokenService
         _blobServiceClient = blobServiceClient;
         _containerName = configuration["BlobStorage:PhotosContainer"] ?? "photos";
         _logger = logger;
+
+        var raw = configuration["BlobStorage:PublicBaseUrl"];
+        _publicBaseUrl = raw != null ? new Uri(raw) : null;
     }
 
     public async Task<(string Url, DateTimeOffset ExpiresAt)?> GetReadSasUrlAsync(
@@ -43,7 +47,7 @@ public class BlobSasTokenService
             {
                 // Local Azurite / connection-string path — shared key available
                 var sasUri = blobClient.GenerateSasUri(BlobSasPermissions.Read, expiresOn);
-                return (sasUri.ToString(), expiresOn);
+                return (RewriteHost(sasUri).ToString(), expiresOn);
             }
 
             // Production path — user delegation key via managed identity
@@ -62,13 +66,24 @@ public class BlobSasTokenService
 
             var sasParams = sasBuilder.ToSasQueryParameters(key, _blobServiceClient.AccountName);
             var signedUri = new UriBuilder(blobUri) { Query = sasParams.ToString() }.Uri;
-            return (signedUri.ToString(), expiresOn);
+            return (RewriteHost(signedUri).ToString(), expiresOn);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to generate SAS token for blob URL {BlobUrl}", blobUrl);
             return null;
         }
+    }
+
+    private Uri RewriteHost(Uri uri)
+    {
+        if (_publicBaseUrl == null) return uri;
+        return new UriBuilder(uri)
+        {
+            Scheme = _publicBaseUrl.Scheme,
+            Host = _publicBaseUrl.Host,
+            Port = _publicBaseUrl.Port
+        }.Uri;
     }
 
     private async Task<UserDelegationKey> GetOrRefreshDelegationKeyAsync(
