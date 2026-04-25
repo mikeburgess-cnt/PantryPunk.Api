@@ -21,6 +21,20 @@ public class ShoppingListController : ControllerBase
         _userService = userService;
     }
 
+    [HttpGet("items/{itemId}/photo")]
+    [ProducesResponseType<ItemPhotoResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetItemPhoto(string itemId)
+    {
+        await _userService.EnsureExistsAsync(User);
+        var userId = User.GetUserId();
+        var result = await _listService.GetItemPhotoAsync(userId, itemId);
+        if (result == null)
+            return NotFound(new ErrorResponse { Error = "Item not found." });
+        return Ok(result);
+    }
+
     [HttpGet]
     [ProducesResponseType<ShoppingListResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

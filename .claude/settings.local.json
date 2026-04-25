@@ -10,7 +10,8 @@
       "Bash(ls *)",
       "Bash(xargs grep *)",
       "Bash(dotnet package *)",
-      "Bash(dotnet user-secrets init *)"
+      "Bash(dotnet user-secrets init *)",
+      "Bash(git log *)"
     ]
   }
 }

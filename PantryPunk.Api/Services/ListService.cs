@@ -9,11 +9,13 @@ public class ListService
 {
     private readonly ListRepository _listRepository;
     private readonly UserRepository _userRepository;
+    private readonly BlobSasTokenService _sasTokenService;
 
-    public ListService(ListRepository listRepository, UserRepository userRepository)
+    public ListService(ListRepository listRepository, UserRepository userRepository, BlobSasTokenService sasTokenService)
     {
         _listRepository = listRepository;
         _userRepository = userRepository;
+        _sasTokenService = sasTokenService;
     }
 
     public async Task<ShoppingListResponse> GetListAsync(string userId)
@@ -161,6 +163,20 @@ public class ListService
         return MapToResponse(newList);
     }
 
+    public async Task<ItemPhotoResponse?> GetItemPhotoAsync(string userId, string itemId)
+    {
+        var list = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
+        var item = list?.Items.FirstOrDefault(i => i.Id == itemId);
+        if (item == null || string.IsNullOrEmpty(item.PhotoUrl)) return null;
+
+        var sas = await _sasTokenService.GetReadSasUrlAsync(item.PhotoUrl, TimeSpan.FromHours(1));
+        return new ItemPhotoResponse
+        {
+            PhotoUrl = sas?.Url,
+            ExpiresAt = sas?.ExpiresAt
+        };
+    }
+
     public async Task<string?> ResolveAddedByAsync(string userId, string? recipientName)
     {
         if (recipientName != null)
@@ -192,7 +208,7 @@ public class ListService
             AddedBy = item.AddedBy,
             AddedByMethod = item.AddedByMethod,
             Notes = item.Notes,
-            PhotoUrl = item.PhotoUrl,
+            HasPhoto = !string.IsNullOrEmpty(item.PhotoUrl),
             Confidence = item.Confidence,
             CreatedAt = item.CreatedAt,
             UpdatedAt = item.UpdatedAt
