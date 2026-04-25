@@ -81,7 +81,6 @@ public class ListService
         item.Description = request.Description.Trim();
         item.Quantity = request.Quantity;
         item.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
-        item.PhotoUrl = request.PhotoUrl;
         item.UpdatedAt = now;
 
         list.UpdatedAt = now;

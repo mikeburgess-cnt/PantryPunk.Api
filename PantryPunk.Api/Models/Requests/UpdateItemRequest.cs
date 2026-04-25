@@ -12,8 +12,4 @@ public class UpdateItemRequest
 
     [StringLength(1024)]
     public string? Notes { get; set; }
-
-    [StringLength(2048)]
-    [RegularExpression("^https://.+", ErrorMessage = "PhotoUrl must be an https URL.")]
-    public string? PhotoUrl { get; set; }
 }

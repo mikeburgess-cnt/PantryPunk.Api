@@ -197,7 +197,7 @@ PantryPunkApi/
 │   │   └── ShareCodeDocument.cs
 │   ├── Requests/                       # Inbound DTOs
 │   │   ├── AddItemRequest.cs           # description, quantity, notes only — addedBy resolved server-side
-│   │   ├── UpdateItemRequest.cs        # description, quantity, notes, photoUrl
+│   │   ├── UpdateItemRequest.cs        # description, quantity, notes
 │   │   ├── GenerateShareCodeRequest.cs
 │   │   ├── ConfirmShareCodeRequest.cs
 │   │   └── UpdateProfileRequest.cs
@@ -721,8 +721,7 @@ Updates an existing item.
 {
   "description": "Bananas",
   "quantity": 4,
-  "notes": "Ripe ones",
-  "photoUrl": null
+  "notes": "Ripe ones"
 }
 ```
 
@@ -732,7 +731,7 @@ Updates an existing item.
 3. Trim `notes`. Set to `null` if the trimmed value is empty.
 4. Retrieve the active `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId` as the owner. Return `404 Not Found` if no active list exists.
 5. Locate the item within the `items` array where `item.id == itemId`. Return `404 Not Found` if no matching item exists.
-6. Update the located item's fields: `description`, `quantity`, `notes`, `photoUrl`.
+6. Update the located item's fields: `description`, `quantity`, `notes`. The item's `photoUrl` is preserved; it can only be set by the photo-upload endpoint.
 7. Set `updatedAt` on the item to `DateTime.UtcNow`.
 8. Set `updatedAt` on the `ShoppingListDocument` to `DateTime.UtcNow`.
 9. Write the updated `ShoppingListDocument` back to the `ShoppingLists` container using a replace/upsert operation.
