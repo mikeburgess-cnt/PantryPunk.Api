@@ -11,7 +11,8 @@
       "Bash(xargs grep *)",
       "Bash(dotnet package *)",
       "Bash(dotnet user-secrets init *)",
-      "Bash(git log *)"
+      "Bash(git log *)",
+      "Bash(git -C \"C:\\\\Users\\\\mikeb_8ijjq2q\\\\source\\\\repos\\\\PantryPunk\\\\PantryPunk.Api\" log --oneline -20)"
     ]
   }
 }

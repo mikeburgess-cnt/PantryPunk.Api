@@ -9,9 +9,6 @@ using PantryPunk.Api.Models.Responses;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Key Vault (must be first so secrets are available to subsequent config)
-builder.Configuration.AddKeyVault();
-
 // Azure App Configuration + Feature Management
 builder.AddAppConfiguration();
 
