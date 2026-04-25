@@ -6,6 +6,7 @@ param storageAccountName string
 param keyVaultName string
 param auth0Domain string
 param auth0Audience string
+param logAnalyticsWorkspaceId string
 
 var keyVaultUri = 'https://${keyVaultName}.vault.azure.net'
 
@@ -15,6 +16,8 @@ resource store 'Microsoft.AppConfiguration/configurationStores@2024-05-01' = {
   sku: { name: 'standard' }
   properties: {
     disableLocalAuth: true
+    enablePurgeProtection: true
+    softDeleteRetentionInDays: 7
   }
 }
 
@@ -81,5 +84,20 @@ resource flags 'Microsoft.AppConfiguration/configurationStores/keyValues@2024-05
     contentType: 'application/vnd.microsoft.appconfig.ff+json;charset=utf-8'
   }
 }]
+
+resource configDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'config-diagnostics'
+  scope: store
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    logs: [
+      { category: 'HttpRequest', enabled: true }
+      { category: 'Audit', enabled: true }
+    ]
+    metrics: [
+      { category: 'AllMetrics', enabled: true }
+    ]
+  }
+}
 
 output endpoint string = store.properties.endpoint

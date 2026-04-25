@@ -30,6 +30,7 @@ module logAnalytics 'modules/logAnalytics.bicep' = {
   params: {
     location: location
     name: logName
+    retentionInDays: logRetentionDays
   }
 }
 
@@ -53,6 +54,7 @@ module appService 'modules/appService.bicep' = {
     sku: appServicePlanSku
     appConfigEndpoint: appConfigEndpoint
     appInsightsConnectionString: appInsights.outputs.connectionString
+    logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
   }
 }
 
@@ -63,6 +65,7 @@ module keyVault 'modules/keyVault.bicep' = {
     location: location
     name: keyVaultName
     appServicePrincipalId: appService.outputs.principalId
+    logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
   }
 }
 
@@ -74,6 +77,7 @@ module cosmos 'modules/cosmos.bicep' = {
     accountName: cosmosName
     databaseName: 'PantryPunkDb'
     appServicePrincipalId: appService.outputs.principalId
+    logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
   }
 }
 
@@ -85,6 +89,7 @@ module storage 'modules/storage.bicep' = {
     accountName: storageAccountName
     containerName: 'photos'
     appServicePrincipalId: appService.outputs.principalId
+    logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
   }
 }
 
@@ -100,6 +105,7 @@ module appConfig 'modules/appConfig.bicep' = {
     keyVaultName: keyVaultName
     auth0Domain: auth0Domain
     auth0Audience: auth0Audience
+    logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
   }
 }
 

@@ -2,6 +2,7 @@ param location string
 param accountName string
 param databaseName string
 param appServicePrincipalId string
+param logAnalyticsWorkspaceId string
 
 resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
   name: accountName
@@ -54,6 +55,7 @@ resource shareCodesContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases
     resource: {
       id: 'ShareCodes'
       partitionKey: { paths: ['/code'], kind: 'Hash' }
+      defaultTtl: -1
     }
   }
 }
@@ -66,6 +68,22 @@ resource sqlRoleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignm
     roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
     principalId: appServicePrincipalId
     scope: cosmosAccount.id
+  }
+}
+
+resource cosmosDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'cosmos-diagnostics'
+  scope: cosmosAccount
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    logs: [
+      { category: 'DataPlaneRequests', enabled: true }
+      { category: 'ControlPlaneRequests', enabled: true }
+      { category: 'QueryRuntimeStatistics', enabled: true }
+    ]
+    metrics: [
+      { category: 'Requests', enabled: true }
+    ]
   }
 }
 
