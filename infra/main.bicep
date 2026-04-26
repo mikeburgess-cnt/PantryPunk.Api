@@ -6,6 +6,8 @@ param auth0Domain string
 param auth0Audience string
 param appServicePlanSku string = 'B1'
 param logRetentionDays int = 30
+// Pass 'api.pantrypunk.ai' only after DNS (CNAME + asuid TXT) is configured
+param apiCustomHostname string = ''
 
 var prefix = 'pp'
 var resourceGroupName = '${prefix}-rg-${env}'
@@ -18,6 +20,8 @@ var storageAccountName = '${prefix}st${env}'
 var appPlanName = '${prefix}-plan-${env}'
 var appSiteName = '${prefix}-app-${env}'
 var appConfigEndpoint = 'https://${appConfigName}.azconfig.io'
+var seedUamiName = '${prefix}-seed-uami-${env}'
+var seedScriptName = '${prefix}-seed-admin-${env}'
 
 resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   name: resourceGroupName
@@ -55,6 +59,7 @@ module appService 'modules/appService.bicep' = {
     appConfigEndpoint: appConfigEndpoint
     appInsightsConnectionString: appInsights.outputs.connectionString
     logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
+    customHostname: apiCustomHostname
   }
 }
 
@@ -81,6 +86,20 @@ module cosmos 'modules/cosmos.bicep' = {
   }
 }
 
+module seedAdmin 'modules/seedAdminUser.bicep' = {
+  name: 'seedAdminUser'
+  scope: rg
+  params: {
+    location: location
+    cosmosAccountName: cosmosName
+    uamiName: seedUamiName
+    scriptName: seedScriptName
+  }
+  dependsOn: [
+    cosmos
+  ]
+}
+
 module storage 'modules/storage.bicep' = {
   name: 'storage'
   scope: rg
@@ -90,6 +109,17 @@ module storage 'modules/storage.bicep' = {
     containerName: 'photos'
     appServicePrincipalId: appService.outputs.principalId
     logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
+  }
+}
+
+module customDomain 'modules/customDomain.bicep' = if (!empty(apiCustomHostname)) {
+  name: 'customDomain'
+  scope: rg
+  params: {
+    location: location
+    siteName: appSiteName
+    planId: appService.outputs.planId
+    customHostname: apiCustomHostname
   }
 }
 
@@ -111,6 +141,7 @@ module appConfig 'modules/appConfig.bicep' = {
 
 output resourceGroupName string = rg.name
 output appServiceHostname string = appService.outputs.defaultHostname
+output customDomainVerificationId string = appService.outputs.customDomainVerificationId
 output appConfigEndpoint string = appConfig.outputs.endpoint
 output keyVaultName string = keyVault.outputs.keyVaultName
 output cosmosEndpoint string = cosmos.outputs.endpoint

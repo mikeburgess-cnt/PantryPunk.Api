@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "6288452352129878536"
+      "templateHash": "13767230619454993832"
     }
   },
   "parameters": {
@@ -28,6 +28,10 @@
     "logRetentionDays": {
       "type": "int",
       "defaultValue": 30
+    },
+    "apiCustomHostname": {
+      "type": "string",
+      "defaultValue": ""
     }
   },
   "variables": {
@@ -35,13 +39,15 @@
     "resourceGroupName": "[format('{0}-rg-{1}', variables('prefix'), parameters('env'))]",
     "logName": "[format('{0}-log-{1}', variables('prefix'), parameters('env'))]",
     "appInsightsName": "[format('{0}-appi-{1}', variables('prefix'), parameters('env'))]",
-    "keyVaultName": "[format('{0}-kv-{1}', variables('prefix'), parameters('env'))]",
+    "keyVaultName": "[format('{0}-kv-{1}-{2}', variables('prefix'), parameters('env'), take(uniqueString(subscription().subscriptionId), 6))]",
     "appConfigName": "[format('{0}-appcs-{1}', variables('prefix'), parameters('env'))]",
     "cosmosName": "[format('{0}-cosmos-{1}', variables('prefix'), parameters('env'))]",
     "storageAccountName": "[format('{0}st{1}', variables('prefix'), parameters('env'))]",
     "appPlanName": "[format('{0}-plan-{1}', variables('prefix'), parameters('env'))]",
     "appSiteName": "[format('{0}-app-{1}', variables('prefix'), parameters('env'))]",
-    "appConfigEndpoint": "[format('https://{0}.azconfig.io', variables('appConfigName'))]"
+    "appConfigEndpoint": "[format('https://{0}.azconfig.io', variables('appConfigName'))]",
+    "seedUamiName": "[format('{0}-seed-uami-{1}', variables('prefix'), parameters('env'))]",
+    "seedScriptName": "[format('{0}-seed-admin-{1}', variables('prefix'), parameters('env'))]"
   },
   "resources": [
     {
@@ -218,6 +224,9 @@
           },
           "logAnalyticsWorkspaceId": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'logAnalytics'), '2025-04-01').outputs.workspaceId.value]"
+          },
+          "customHostname": {
+            "value": "[parameters('apiCustomHostname')]"
           }
         },
         "template": {
@@ -227,7 +236,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "4863084595841487379"
+              "templateHash": "10206274753027368040"
             }
           },
           "parameters": {
@@ -251,6 +260,10 @@
             },
             "logAnalyticsWorkspaceId": {
               "type": "string"
+            },
+            "customHostname": {
+              "type": "string",
+              "defaultValue": ""
             }
           },
           "resources": [
@@ -335,6 +348,19 @@
               ]
             },
             {
+              "condition": "[not(empty(parameters('customHostname')))]",
+              "type": "Microsoft.Web/sites/hostNameBindings",
+              "apiVersion": "2023-12-01",
+              "name": "[format('{0}/{1}', parameters('siteName'), if(not(empty(parameters('customHostname'))), parameters('customHostname'), 'placeholder'))]",
+              "properties": {
+                "hostNameType": "Verified",
+                "sslState": "Disabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('siteName'))]"
+              ]
+            },
+            {
               "type": "Microsoft.Insights/diagnosticSettings",
               "apiVersion": "2021-05-01-preview",
               "scope": "[resourceId('Microsoft.Web/sites', parameters('siteName'))]",
@@ -383,6 +409,14 @@
             "defaultHostname": {
               "type": "string",
               "value": "[reference(resourceId('Microsoft.Web/sites', parameters('siteName')), '2023-12-01').defaultHostName]"
+            },
+            "customDomainVerificationId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Web/sites', parameters('siteName')), '2023-12-01').customDomainVerificationId]"
+            },
+            "planId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]"
             }
           }
         }
@@ -736,6 +770,136 @@
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
+      "name": "seedAdminUser",
+      "resourceGroup": "[variables('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "cosmosAccountName": {
+            "value": "[variables('cosmosName')]"
+          },
+          "uamiName": {
+            "value": "[variables('seedUamiName')]"
+          },
+          "scriptName": {
+            "value": "[variables('seedScriptName')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "16194629068800324772"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "cosmosAccountName": {
+              "type": "string"
+            },
+            "databaseName": {
+              "type": "string",
+              "defaultValue": "PantryPunkDb"
+            },
+            "containerName": {
+              "type": "string",
+              "defaultValue": "Users"
+            },
+            "uamiName": {
+              "type": "string"
+            },
+            "scriptName": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "seedDocument": "{\n  \"id\": \"auth0|69e8b3b86c99ecda7714f0db\",\n  \"userId\": \"auth0|69e8b3b86c99ecda7714f0db\",\n  \"displayName\": \"\",\n  \"email\": \"\",\n  \"isSubscriber\": true,\n  \"subscribedAt\": null,\n  \"subscriptionExpiresAt\": null,\n  \"createdAt\": \"2026-04-23T01:40:09.4878089Z\",\n  \"updatedAt\": \"2026-04-23T01:40:09.4878089Z\"\n}\n"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2023-01-31",
+              "name": "[parameters('uamiName')]",
+              "location": "[parameters('location')]"
+            },
+            {
+              "type": "Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments",
+              "apiVersion": "2024-05-15",
+              "name": "[format('{0}/{1}', parameters('cosmosAccountName'), guid(resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('cosmosAccountName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('uamiName')), 'cosmos-data-contributor-seed'))]",
+              "properties": {
+                "roleDefinitionId": "[format('{0}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002', resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('cosmosAccountName')))]",
+                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('uamiName')), '2023-01-31').principalId]",
+                "scope": "[resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('cosmosAccountName'))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('uamiName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Resources/deploymentScripts",
+              "apiVersion": "2023-08-01",
+              "name": "[parameters('scriptName')]",
+              "location": "[parameters('location')]",
+              "kind": "AzureCLI",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('uamiName')))]": {}
+                }
+              },
+              "properties": {
+                "azCliVersion": "2.61.0",
+                "forceUpdateTag": "[uniqueString(variables('seedDocument'))]",
+                "retentionInterval": "PT1H",
+                "timeout": "PT10M",
+                "cleanupPreference": "OnSuccess",
+                "environmentVariables": [
+                  {
+                    "name": "COSMOS_ENDPOINT",
+                    "value": "[reference(resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('cosmosAccountName')), '2024-05-15').documentEndpoint]"
+                  },
+                  {
+                    "name": "DATABASE_NAME",
+                    "value": "[parameters('databaseName')]"
+                  },
+                  {
+                    "name": "CONTAINER_NAME",
+                    "value": "[parameters('containerName')]"
+                  },
+                  {
+                    "name": "BODY",
+                    "value": "[variables('seedDocument')]"
+                  }
+                ],
+                "scriptContent": "set -euo pipefail\nUSER_ID=$(echo \"$BODY\" | jq -r '.userId')\nRESOURCE=\"${COSMOS_ENDPOINT%/}\"\nRESOURCE=\"${RESOURCE%:443}\"\nTOKEN=$(az account get-access-token --resource \"$RESOURCE\" --query accessToken -o tsv)\nSIG=$(python3 -c \"import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))\" \"type=aad&ver=1.0&sig=${TOKEN}\")\nDATE_HDR=$(TZ=GMT date '+%a, %d %b %Y %H:%M:%S GMT')\nURL=\"${RESOURCE}/dbs/${DATABASE_NAME}/colls/${CONTAINER_NAME}/docs\"\ncurl -sfS -X POST \"$URL\" \\\n  -H \"Authorization: ${SIG}\" \\\n  -H \"x-ms-version: 2018-12-31\" \\\n  -H \"x-ms-date: ${DATE_HDR}\" \\\n  -H \"x-ms-documentdb-is-upsert: true\" \\\n  -H \"x-ms-documentdb-partitionkey: [\\\"${USER_ID}\\\"]\" \\\n  -H 'Content-Type: application/json' \\\n  -d \"$BODY\"\necho \"seeded user: $USER_ID\"\n"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments', parameters('cosmosAccountName'), guid(resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('cosmosAccountName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('uamiName')), 'cosmos-data-contributor-seed'))]",
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('uamiName'))]"
+              ]
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'cosmos')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('resourceGroupName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
       "name": "storage",
       "resourceGroup": "[variables('resourceGroupName')]",
       "properties": {
@@ -909,6 +1073,87 @@
       ]
     },
     {
+      "condition": "[not(empty(parameters('apiCustomHostname')))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "customDomain",
+      "resourceGroup": "[variables('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "siteName": {
+            "value": "[variables('appSiteName')]"
+          },
+          "planId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'appService'), '2025-04-01').outputs.planId.value]"
+          },
+          "customHostname": {
+            "value": "[parameters('apiCustomHostname')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "13086685339133628464"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "siteName": {
+              "type": "string"
+            },
+            "planId": {
+              "type": "string"
+            },
+            "customHostname": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Web/certificates",
+              "apiVersion": "2023-12-01",
+              "name": "[format('{0}-cert', replace(parameters('customHostname'), '.', '-'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "serverFarmId": "[parameters('planId')]",
+                "canonicalName": "[parameters('customHostname')]"
+              }
+            },
+            {
+              "type": "Microsoft.Web/sites/hostNameBindings",
+              "apiVersion": "2023-12-01",
+              "name": "[format('{0}/{1}', parameters('siteName'), parameters('customHostname'))]",
+              "properties": {
+                "hostNameType": "Verified",
+                "sslState": "SniEnabled",
+                "thumbprint": "[reference(resourceId('Microsoft.Web/certificates', format('{0}-cert', replace(parameters('customHostname'), '.', '-'))), '2023-12-01').thumbprint]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/certificates', format('{0}-cert', replace(parameters('customHostname'), '.', '-')))]"
+              ]
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'appService')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('resourceGroupName'))]"
+      ]
+    },
+    {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "appConfig",
@@ -954,7 +1199,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "10010894546822296295"
+              "templateHash": "6890717292138216508"
             }
           },
           "parameters": {
@@ -987,7 +1232,7 @@
             }
           },
           "variables": {
-            "keyVaultUri": "[format('https://{0}.{1}', parameters('keyVaultName'), environment().suffixes.keyvaultDns)]",
+            "keyVaultUri": "[format('https://{0}{1}', parameters('keyVaultName'), environment().suffixes.keyvaultDns)]",
             "plainKeys": [
               {
                 "key": "PantryPunk:Sentinel",
@@ -1073,7 +1318,7 @@
                 "name": "standard"
               },
               "properties": {
-                "disableLocalAuth": true,
+                "disableLocalAuth": false,
                 "enablePurgeProtection": true,
                 "softDeleteRetentionInDays": 7
               }
@@ -1084,7 +1329,7 @@
               "scope": "[resourceId('Microsoft.AppConfiguration/configurationStores', parameters('name'))]",
               "name": "[guid(resourceId('Microsoft.AppConfiguration/configurationStores', parameters('name')), parameters('appServicePrincipalId'), 'appconfig-data-reader')]",
               "properties": {
-                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '516239f1-63e7-40bd-9e9e-be997ecbc9c8')]",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '516239f1-63e1-4d78-a4de-a74fb236a071')]",
                 "principalId": "[parameters('appServicePrincipalId')]",
                 "principalType": "ServicePrincipal"
               },
@@ -1192,6 +1437,10 @@
     "appServiceHostname": {
       "type": "string",
       "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'appService'), '2025-04-01').outputs.defaultHostname.value]"
+    },
+    "customDomainVerificationId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'appService'), '2025-04-01').outputs.customDomainVerificationId.value]"
     },
     "appConfigEndpoint": {
       "type": "string",

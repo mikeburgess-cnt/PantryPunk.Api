@@ -44,6 +44,12 @@ az keyvault secret set --vault-name pp-kv-prod --name RevenueCat--WebhookSecret 
 
 Secret names use `--` (double hyphen) which maps to `:` in ASP.NET Core config.
 
+## Admin user seed
+
+`infra/seed-admin.json` is upserted into the Cosmos `Users` container during deployment by the `seedAdminUser` module. The seed runs via a `Microsoft.Resources/deploymentScripts` resource using a dedicated user-assigned managed identity that holds the `Cosmos DB Built-in Data Contributor` role on the account.
+
+`forceUpdateTag` is derived from the JSON content, so the script only re-runs when `seed-admin.json` changes — edit the file and redeploy to update the seeded document. The same `id`/`userId` is used for upsert semantics, so re-runs are safe.
+
 ## Trigger an App Configuration refresh after any key change
 
 ```bash

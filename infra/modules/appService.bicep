@@ -5,6 +5,7 @@ param sku string
 param appConfigEndpoint string
 param appInsightsConnectionString string
 param logAnalyticsWorkspaceId string
+param customHostname string = ''
 
 resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: planName
@@ -60,6 +61,17 @@ resource ftpCredentialsPolicy 'Microsoft.Web/sites/basicPublishingCredentialsPol
   }
 }
 
+// Binds the custom hostname without SSL — cert and SSL binding are handled by customDomain.bicep
+// DNS (CNAME + asuid TXT) must exist before this binding succeeds on deployment
+resource hostNameBinding 'Microsoft.Web/sites/hostNameBindings@2023-12-01' = if (!empty(customHostname)) {
+  parent: site
+  name: !empty(customHostname) ? customHostname : 'placeholder'
+  properties: {
+    hostNameType: 'Verified'
+    sslState: 'Disabled'
+  }
+}
+
 resource siteDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
   name: 'site-diagnostics'
   scope: site
@@ -80,3 +92,5 @@ resource siteDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-previ
 
 output principalId string = site.identity.principalId
 output defaultHostname string = site.properties.defaultHostName
+output customDomainVerificationId string = site.properties.customDomainVerificationId
+output planId string = plan.id

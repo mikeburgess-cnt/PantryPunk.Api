@@ -21,20 +21,56 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     {
         options.Authority = $"https://{auth0Domain}/";
         options.Audience = auth0Audience;
+        options.IncludeErrorDetails = true;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             NameClaimType = System.Security.Claims.ClaimTypes.NameIdentifier
         };
         options.Events = new JwtBearerEvents
         {
+            OnMessageReceived = ctx =>
+            {
+                var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("Auth0");
+                var authHeader = ctx.Request.Headers.Authorization.ToString();
+                var hasBearer = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase);
+                logger.LogInformation(
+                    "JWT message received for {Method} {Path}. AuthHeader length: {HeaderLen}. Bearer prefix: {HasBearer}. Token length: {TokenLen}",
+                    ctx.Request.Method,
+                    ctx.Request.Path,
+                    authHeader.Length,
+                    hasBearer,
+                    hasBearer ? authHeader.Length - 7 : 0);
+                return Task.CompletedTask;
+            },
             OnAuthenticationFailed = ctx =>
             {
                 var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
                     .CreateLogger("Auth0");
+                var messages = new List<string>();
+                for (var ex = ctx.Exception; ex != null; ex = ex.InnerException)
+                {
+                    messages.Add($"{ex.GetType().Name}: {ex.Message}");
+                }
                 logger.LogWarning(ctx.Exception,
-                    "JWT auth failed: {Message}. AuthHeader present: {HasHeader}",
-                    ctx.Exception.Message,
-                    ctx.Request.Headers.ContainsKey("Authorization"));
+                    "JWT auth failed for {Path}. Authority={Authority} Audience={Audience}. Chain: {Chain}",
+                    ctx.Request.Path,
+                    $"https://{auth0Domain}/",
+                    auth0Audience,
+                    string.Join(" -> ", messages));
+                return Task.CompletedTask;
+            },
+            OnChallenge = ctx =>
+            {
+                var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("Auth0");
+                logger.LogWarning(
+                    "JWT challenge issued for {Method} {Path}. Error: {Error}. Description: {Description}. AuthFailure: {AuthFailure}",
+                    ctx.Request.Method,
+                    ctx.Request.Path,
+                    ctx.Error,
+                    ctx.ErrorDescription,
+                    ctx.AuthenticateFailure?.Message);
                 return Task.CompletedTask;
             },
             OnTokenValidated = ctx =>
@@ -130,6 +166,15 @@ builder.Services.AddRateLimiter(options =>
 builder.WebHost.ConfigureKestrel(options =>
     options.Limits.MaxRequestBodySize = 3 * 1024 * 1024 + 64 * 1024);
 var app = builder.Build();
+
+// One-shot startup log so we can confirm in App Insights what Auth0 values
+// the running instance was actually configured with.
+app.Logger.LogWarning(
+    "Auth0 config at startup: Authority=https://{Domain}/ Audience={Audience} DomainPresent={DomainPresent} AudiencePresent={AudiencePresent}",
+    auth0Domain,
+    auth0Audience,
+    !string.IsNullOrWhiteSpace(auth0Domain),
+    !string.IsNullOrWhiteSpace(auth0Audience));
 
 // Middleware pipeline order matters
 if (app.Environment.IsDevelopment())

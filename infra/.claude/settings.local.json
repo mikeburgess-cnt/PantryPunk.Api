@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/mikeb_8ijjq2q/source/repos/PantryPunk/PantryPunk.Api/.github/**)",
+      "Read(//c/Users/mikeb_8ijjq2q/source/repos/PantryPunk/PantryPunk.Api/.github/workflows/**)",
+      "Bash(az bicep *)",
+      "Bash(echo \"exit=$?\")"
+    ]
+  }
+}
