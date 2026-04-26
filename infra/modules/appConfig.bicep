@@ -8,14 +8,14 @@ param auth0Domain string
 param auth0Audience string
 param logAnalyticsWorkspaceId string
 
-var keyVaultUri = 'https://${keyVaultName}.vault.azure.net'
+var keyVaultUri = 'https://${keyVaultName}${environment().suffixes.keyvaultDns}'
 
 resource store 'Microsoft.AppConfiguration/configurationStores@2024-05-01' = {
   name: name
   location: location
   sku: { name: 'standard' }
   properties: {
-    disableLocalAuth: true
+    disableLocalAuth: false
     enablePurgeProtection: true
     softDeleteRetentionInDays: 7
   }
@@ -26,7 +26,7 @@ resource dataReaderAssignment 'Microsoft.Authorization/roleAssignments@2022-04-0
   name: guid(store.id, appServicePrincipalId, 'appconfig-data-reader')
   scope: store
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '516239f1-63e7-40bd-9e9e-be997ecbc9c8')
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '516239f1-63e1-4d78-a4de-a74fb236a071')
     principalId: appServicePrincipalId
     principalType: 'ServicePrincipal'
   }
