@@ -102,19 +102,23 @@ public class ShoppingListController : ControllerBase
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> Complete()
+    public async Task<IActionResult> Complete([FromBody] CompleteListRequest? request = null)
     {
         await _userService.EnsureExistsAsync(User);
         var userId = User.GetUserId();
         try
         {
-            var newList = await _listService.CompleteAsync(userId);
+            var newList = await _listService.CompleteAsync(userId, request?.UnboughtItemIds);
             if (newList == null)
                 return NotFound(new ErrorResponse { Error = "Shopping list not found." });
 
             return Ok(newList);
         }
         catch (EmptyListException ex)
+        {
+            return BadRequest(new ErrorResponse { Error = ex.Message });
+        }
+        catch (UnknownItemIdsException ex)
         {
             return BadRequest(new ErrorResponse { Error = ex.Message });
         }

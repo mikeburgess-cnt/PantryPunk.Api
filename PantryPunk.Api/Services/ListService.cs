@@ -133,7 +133,7 @@ public class ListService
     // two active-flagged documents in the same partition; GetActiveByOwnerUserIdAsync breaks
     // the tie by createdAt DESC so the newer empty list wins. Operator cleanup is still
     // advisable to restore the single-active invariant.
-    public async Task<ShoppingListResponse?> CompleteAsync(string userId)
+    public async Task<ShoppingListResponse?> CompleteAsync(string userId, IReadOnlyCollection<string>? unboughtItemIds)
     {
         var active = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
         if (active == null) return null;
@@ -141,13 +141,50 @@ public class ListService
         if (active.Items.Count == 0)
             throw new EmptyListException("Cannot complete an empty list.");
 
+        var unboughtSet = unboughtItemIds is null
+            ? new HashSet<string>()
+            : new HashSet<string>(unboughtItemIds, StringComparer.Ordinal);
+
+        var activeItemIds = active.Items.Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
+        var unknownIds = unboughtSet.Where(id => !activeItemIds.Contains(id)).ToList();
+        if (unknownIds.Count > 0)
+            throw new UnknownItemIdsException($"Unknown item id(s): {string.Join(", ", unknownIds)}.");
+
         var now = DateTime.UtcNow;
+
+        foreach (var item in active.Items)
+        {
+            item.IsPurchased = !unboughtSet.Contains(item.Id);
+            item.UpdatedAt = now;
+        }
+
+        var carriedItems = active.Items
+            .Where(i => unboughtSet.Contains(i.Id))
+            .Select(i => new ShoppingItemDocument
+            {
+                Id = Guid.NewGuid().ToString(),
+                Description = i.Description,
+                Brand = i.Brand,
+                KnownAs = i.KnownAs,
+                Size = i.Size,
+                Quantity = i.Quantity,
+                AddedBy = i.AddedBy,
+                AddedByMethod = i.AddedByMethod,
+                Notes = i.Notes,
+                PhotoUrl = i.PhotoUrl,
+                Confidence = i.Confidence,
+                CreatedAt = now,
+                UpdatedAt = now,
+                IsPurchased = false
+            })
+            .ToList();
+
         var newList = new ShoppingListDocument
         {
             Id = Guid.NewGuid().ToString(),
             ListId = active.ListId,
             OwnerUserId = userId,
-            Items = new List<ShoppingItemDocument>(),
+            Items = carriedItems,
             Status = ShoppingListStatus.Active,
             CreatedAt = now,
             UpdatedAt = now
@@ -210,7 +247,8 @@ public class ListService
             HasPhoto = !string.IsNullOrEmpty(item.PhotoUrl),
             Confidence = item.Confidence,
             CreatedAt = item.CreatedAt,
-            UpdatedAt = item.UpdatedAt
+            UpdatedAt = item.UpdatedAt,
+            IsPurchased = item.IsPurchased
         };
     }
 }

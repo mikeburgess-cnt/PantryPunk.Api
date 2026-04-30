@@ -47,5 +47,6 @@ public class ShoppingItemDocument
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 
-
+    [JsonPropertyName("isPurchased")]
+    public bool IsPurchased { get; set; } = false;
 }

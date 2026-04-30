@@ -509,6 +509,15 @@ public class ShoppingItemDocument
 
     [JsonProperty("updatedAt")]
     public DateTime UpdatedAt { get; set; }
+
+    /// <summary>
+    /// Set true at list completion for items the shopper actually bought.
+    /// Items left unbought (carried over to the next list) and items on the
+    /// active list both read false. Persisted on completed list documents
+    /// for analytics (purchase frequency, never-bought items, fulfilment).
+    /// </summary>
+    [JsonProperty("isPurchased")]
+    public bool IsPurchased { get; set; }
 }
 
 // ShareCodes container
@@ -690,23 +699,32 @@ Adds a new item to the shopping list.
 
 #### `POST /api/shopping-list/complete`
 
-Marks the user's active shopping list as completed and creates a fresh empty active list. Called by the app when the user finishes shopping. Completed lists remain in storage so future features (auto-suggest, history view) can read them.
+Marks the user's active shopping list as completed and creates a fresh active list. Items the shopper didn't buy (named in `unboughtItemIds`) carry over as fresh copies on the new active list; items the shopper bought are flagged `isPurchased = true` on the now-completed document so analytics can read per-trip fulfilment history. Called by the app when the user finishes shopping.
 
 **Auth:** Auth0 JWT or `X-Share-Code` header. Either the owner or a share-code guest can complete (the guest is often the one actually shopping).
+
+**Request:** Body is optional. When provided:
+```json
+{ "unboughtItemIds": ["<itemId>", "<itemId>"] }
+```
+Empty body, missing body, or `"unboughtItemIds": []` means the shopper bought every item — the new active list will be empty (matches the legacy behaviour of this endpoint).
 
 **Behaviour:**
 1. Read `userId` from the claims principal.
 2. Retrieve the active `ShoppingListDocument` (same query as `GET /api/shopping-list`). Return `404 Not Found` if none exists.
 3. If the active list has zero items, return `400 Bad Request` with `"Cannot complete an empty list."`.
-4. Create a new `ShoppingListDocument` for the same `ownerUserId` with a fresh `id` but **reusing the existing `listId`** (so the new document lands in the same partition as the one being completed). Empty `items`, `status = "active"`, and `createdAt`/`updatedAt = DateTime.UtcNow`. Write it to the container.
-5. On the previously active list, set `status = "completed"`, `completedAt = DateTime.UtcNow`, `updatedAt = DateTime.UtcNow`. Replace it in the container.
-6. Return `200 OK` with the new empty active list (same shape as `GET /api/shopping-list`).
+4. Dedupe `unboughtItemIds`. If any id is not present on the active list's `items`, return `400 Bad Request` with `"Unknown item id(s): ...."` and make no writes.
+5. On every item of the active list, set `isPurchased = !unboughtItemIds.Contains(item.id)` and `updatedAt = DateTime.UtcNow`. Items in `unboughtItemIds` keep `isPurchased = false` (they were left behind for the next trip).
+6. Build the carry-over set: for each item whose `id` is in `unboughtItemIds`, project to a new `ShoppingItemDocument` with a fresh `id` (`Guid.NewGuid().ToString()`), fresh `createdAt`/`updatedAt`, `isPurchased = false`, and copy `description`, `brand`, `knownAs`, `size`, `quantity`, `notes`, `addedBy`, `addedByMethod`, `photoUrl`, `confidence` verbatim. `photoUrl` is reused as-is — the blob is unaffected.
+7. Create a new `ShoppingListDocument` for the same `ownerUserId` with a fresh `id` but **reusing the existing `listId`** (so the new document lands in the same partition as the one being completed). `items =` the carry-over set, `status = "active"`, `createdAt`/`updatedAt = DateTime.UtcNow`. Write it to the container.
+8. On the previously active list, set `status = "completed"`, `completedAt = DateTime.UtcNow`, `updatedAt = DateTime.UtcNow`. Replace it in the container — the same write also persists the per-item `isPurchased` flags from step 5.
+9. Return `200 OK` with the new active list (same shape as `GET /api/shopping-list`).
 
 > **Why reuse `listId`:** share codes bind to `listId`. Minting a fresh `listId` on each completion would orphan every active share code for that household. Reusing `listId` keeps guest access seamless across trips and leaves share-code bookkeeping untouched.
 
-> **Failure mode:** the order is create-new-first. If step 5 fails after step 4 succeeds, two `status = "active"` documents coexist in the same partition. The active-list query breaks the tie with `ORDER BY c.createdAt DESC`, so the newer empty list wins and a retry will reject with `400` (empty). Surface the error and log it for operator follow-up to re-mark the older document `completed`.
+> **Failure mode:** the order is create-new-first. If step 8 fails after step 7 succeeds, two `status = "active"` documents coexist in the same partition. The active-list query breaks the tie with `ORDER BY c.createdAt DESC`, so the newer list wins and a retry will reject with `400` if it is empty (or proceed normally if it has carried items). Surface the error and log it for operator follow-up to re-mark the older document `completed`.
 
-**Response `200 OK`:** The new (empty) active list, in the same shape as `GET /api/shopping-list`.
+**Response `200 OK`:** The new active list (containing the carried-over items, or empty if every item was bought), in the same shape as `GET /api/shopping-list`. Each item response includes the new `isPurchased` field.
 
 ---
 
