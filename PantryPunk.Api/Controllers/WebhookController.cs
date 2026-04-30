@@ -16,20 +16,26 @@ public class WebhookController : ControllerBase
     private readonly ShareRepository _shareRepository;
     private readonly IConfiguration _configuration;
     private readonly ILogger<WebhookController> _logger;
+    private readonly IWebHostEnvironment _env;
 
     public WebhookController(
         UserService userService,
         ShareRepository shareRepository,
         IConfiguration configuration,
-        ILogger<WebhookController> logger)
+        ILogger<WebhookController> logger,
+        IWebHostEnvironment env)
     {
         _userService = userService;
         _shareRepository = shareRepository;
         _configuration = configuration;
         _logger = logger;
+        _env = env;
     }
 
     [HttpPost("revenuecat")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> RevenueCat(
         [FromHeader(Name = "X-RevenueCat-Signature")] string? signature)
     {
@@ -38,9 +44,18 @@ public class WebhookController : ControllerBase
         var body = await new StreamReader(Request.Body).ReadToEndAsync();
         Request.Body.Position = 0;
 
-        // Verify signature
+        // Verify signature — fail-closed in production
         var secret = _configuration["RevenueCat:WebhookSecret"];
-        if (!string.IsNullOrEmpty(secret))
+        if (string.IsNullOrEmpty(secret))
+        {
+            if (!_env.IsDevelopment())
+            {
+                _logger.LogError("RevenueCat:WebhookSecret is missing — refusing webhook in {Environment}", _env.EnvironmentName);
+                return StatusCode(500);
+            }
+            _logger.LogWarning("RevenueCat:WebhookSecret missing — signature check skipped (Development only).");
+        }
+        else
         {
             if (string.IsNullOrEmpty(signature))
                 return Unauthorized();

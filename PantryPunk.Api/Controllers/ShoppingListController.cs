@@ -13,25 +13,44 @@ namespace PantryPunk.Api.Controllers;
 public class ShoppingListController : ControllerBase
 {
     private readonly ListService _listService;
+    private readonly UserService _userService;
 
-    public ShoppingListController(ListService listService)
+    public ShoppingListController(ListService listService, UserService userService)
     {
         _listService = listService;
+        _userService = userService;
+    }
+
+    [HttpGet("items/{itemId}/photo")]
+    [ProducesResponseType<ItemPhotoResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetItemPhoto(string itemId)
+    {
+        await _userService.EnsureExistsAsync(User);
+        var userId = User.GetUserId();
+        var result = await _listService.GetItemPhotoAsync(userId, itemId);
+        if (result == null)
+            return NotFound(new ErrorResponse { Error = "Item not found." });
+        return Ok(result);
     }
 
     [HttpGet]
+    [ProducesResponseType<ShoppingListResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GetList()
     {
+        await _userService.EnsureExistsAsync(User);
         var userId = User.GetUserId();
         var result = await _listService.GetListAsync(userId);
-
-        if (result == null)
-            return NotFound(new ErrorResponse { Error = "Shopping list not found." });
-
         return Ok(result);
     }
 
     [HttpPost("items")]
+    [ProducesResponseType<ShoppingItemResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> AddItem([FromBody] AddItemRequest request)
     {
         var description = request.Description?.Trim();
@@ -40,7 +59,10 @@ public class ShoppingListController : ControllerBase
 
         request.Description = description;
 
+        await _userService.EnsureExistsAsync(User);
         var userId = User.GetUserId();
+        await _listService.GetOrCreateActiveAsync(userId);
+
         var addedBy = await _listService.ResolveAddedByAsync(userId, User.GetRecipientName());
         if (addedBy == null)
             return NotFound(new ErrorResponse { Error = "User not found." });
@@ -53,6 +75,10 @@ public class ShoppingListController : ControllerBase
     }
 
     [HttpPut("items/{itemId}")]
+    [ProducesResponseType<ShoppingItemResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> UpdateItem(string itemId, [FromBody] UpdateItemRequest request)
     {
         var description = request.Description?.Trim();
@@ -61,6 +87,7 @@ public class ShoppingListController : ControllerBase
 
         request.Description = description;
 
+        await _userService.EnsureExistsAsync(User);
         var userId = User.GetUserId();
         var result = await _listService.UpdateItemAsync(userId, itemId, request);
 
@@ -70,9 +97,40 @@ public class ShoppingListController : ControllerBase
         return Ok(result);
     }
 
+    [HttpPost("complete")]
+    [ProducesResponseType<ShoppingListResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Complete([FromBody] CompleteListRequest? request = null)
+    {
+        await _userService.EnsureExistsAsync(User);
+        var userId = User.GetUserId();
+        try
+        {
+            var newList = await _listService.CompleteAsync(userId, request?.UnboughtItemIds);
+            if (newList == null)
+                return NotFound(new ErrorResponse { Error = "Shopping list not found." });
+
+            return Ok(newList);
+        }
+        catch (EmptyListException ex)
+        {
+            return BadRequest(new ErrorResponse { Error = ex.Message });
+        }
+        catch (UnknownItemIdsException ex)
+        {
+            return BadRequest(new ErrorResponse { Error = ex.Message });
+        }
+    }
+
     [HttpDelete("items/{itemId}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> DeleteItem(string itemId)
     {
+        await _userService.EnsureExistsAsync(User);
         var userId = User.GetUserId();
         var deleted = await _listService.DeleteItemAsync(userId, itemId);
 

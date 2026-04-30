@@ -33,10 +33,9 @@ public class ShareService
     {
         await _userService.RequireSubscriberAsync(userId);
 
-        var list = await _listRepository.GetByOwnerUserIdAsync(userId)
+        var list = await _listRepository.GetActiveByOwnerUserIdAsync(userId)
             ?? throw new InvalidOperationException("Shopping list not found for user.");
 
-        var recipientName = request.RecipientName.Trim();
         var expiryHours = _configuration.GetValue("PantryPunk:ShareCode:ExpiryHours", 24);
 
         string code = null!;
@@ -57,7 +56,6 @@ public class ShareService
             Code = code,
             ListId = list.ListId,
             OwnerUserId = userId,
-            RecipientName = recipientName,
             Confirmed = false,
             ExpiresAt = now.AddHours(expiryHours),
             CreatedAt = now
@@ -68,38 +66,50 @@ public class ShareService
         return MapToGenerateResponse(document);
     }
 
-    public async Task<(bool success, string? recipientName, string? error)> ConfirmCodeAsync(ConfirmShareCodeRequest request)
+    public async Task<(ShareCodeResponse? response, string? error)> ConfirmCodeAsync(ConfirmShareCodeRequest request)
     {
         var code = request.Code.Trim().ToUpperInvariant();
         var document = await _shareRepository.GetByCodeAsync(code);
 
         if (document == null)
-            return (false, null, "Invalid, expired, or revoked code");
+            return (null, "Invalid, expired, or revoked code");
 
         if (document.RevokedAt.HasValue)
-            return (false, null, "Invalid, expired, or revoked code");
+            return (null, "Invalid, expired, or revoked code");
 
         if (!document.Confirmed && document.ExpiresAt < DateTime.UtcNow)
-            return (false, null, "Invalid, expired, or revoked code");
+            return (null, "Invalid, expired, or revoked code");
 
         if (!document.Confirmed)
         {
+            document.RecipientName = request.RecipientName.Trim();
             document.Confirmed = true;
             document.ConfirmedAt = DateTime.UtcNow;
             await _shareRepository.ReplaceAsync(document);
         }
 
-        return (true, document.RecipientName, null);
+        return (MapToListResponse(document), null);
     }
 
     public async Task<List<ShareCodeResponse>> GetShareCodesAsync(string userId)
     {
+        await _userService.RequireSubscriberAsync(userId);
         var documents = await _shareRepository.GetByOwnerUserIdAsync(userId);
-        return documents.Select(MapToListResponse).ToList();
+        return documents.Where(d => d.Confirmed).Select(MapToListResponse).ToList();
     }
 
-    public async Task<bool> RevokeAsync(string shareId, string userId)
+    public async Task<bool> RevokeAsync(string shareId, string userId, bool isShareCodeUser, string? authenticatedShareId)
     {
+        if (isShareCodeUser)
+        {
+            if (authenticatedShareId != shareId)
+                throw new ForbiddenException("You can only revoke your own share code.");
+        }
+        else
+        {
+            await _userService.RequireSubscriberAsync(userId);
+        }
+
         var document = await _shareRepository.GetByIdAndOwnerAsync(shareId, userId);
         if (document == null) return false;
 

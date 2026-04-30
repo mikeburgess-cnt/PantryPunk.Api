@@ -17,7 +17,7 @@ public class ShareCodeDocument
     public string OwnerUserId { get; set; } = null!;
 
     [JsonPropertyName("recipientName")]
-    public string RecipientName { get; set; } = null!;
+    public string? RecipientName { get; set; }
 
     [JsonPropertyName("confirmed")]
     public bool Confirmed { get; set; }

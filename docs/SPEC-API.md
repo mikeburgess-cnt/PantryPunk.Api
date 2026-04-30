@@ -197,7 +197,7 @@ PantryPunkApi/
 │   │   └── ShareCodeDocument.cs
 │   ├── Requests/                       # Inbound DTOs
 │   │   ├── AddItemRequest.cs           # description, quantity, notes only — addedBy resolved server-side
-│   │   ├── UpdateItemRequest.cs        # description, quantity, notes, photoUrl
+│   │   ├── UpdateItemRequest.cs        # description, quantity, notes
 │   │   ├── GenerateShareCodeRequest.cs
 │   │   ├── ConfirmShareCodeRequest.cs
 │   │   └── UpdateProfileRequest.cs
@@ -276,7 +276,7 @@ X-Share-Code: 6Y812C
 
 `ShareCodeAuthMiddleware` intercepts requests that include this header (without an `Authorization` header), validates the code against the `ShareCodes` Cosmos DB container, and if valid, injects a synthetic claims principal with:
 - `NameIdentifier` claim = `ownerUserId` (the subscriber's user ID — used to look up the list)
-- A custom `RecipientName` claim = `ShareCodeDocument.RecipientName` (used as `addedBy` on items the guest adds)
+- A custom `RecipientName` claim = `ShareCodeDocument.RecipientName`, i.e. the name the guest supplied when they confirmed the code (used as `addedBy` on items the guest adds)
 
 The list controller and service layer read these claims from the principal — no further container lookups are needed for authentication or `addedBy` resolution.
 
@@ -306,12 +306,13 @@ Endpoints that require subscriber status (e.g. `POST /api/share/generate-code`) 
 | `POST /api/shopping-list/items` | JWT or Share Code | |
 | `PUT /api/shopping-list/items/:id` | JWT or Share Code | |
 | `DELETE /api/shopping-list/items/:id` | JWT or Share Code | |
+| `POST /api/shopping-list/complete` | JWT or Share Code | Mark active list completed, create new active list |
 | `POST /api/shopping-list/items/photo` | JWT or Share Code | Upload photo, recognise item, add to list |
 | `POST /api/shopping-list/items/voice` | JWT or Share Code | Transcribe audio, extract items, add to list |
 | `POST /api/share/generate-code` | JWT + isSubscriber | |
 | `POST /api/share/confirm-code` | None | Public endpoint |
-| `GET /api/share` | JWT + isSubscriber | Replaces polling status endpoint |
-| `DELETE /api/share/:shareId` | JWT + isSubscriber | |
+| `GET /api/share` | JWT + isSubscriber | Replaces polling status endpoint; share-code guests are rejected |
+| `DELETE /api/share/:shareId` | (JWT + isSubscriber) or Share Code (self only) | Guests may only revoke the code they authenticated with |
 | `POST /api/webhooks/revenuecat` | RevenueCat signature | Not Auth0 |
 
 ---
@@ -349,9 +350,11 @@ Stores registered user profiles.
 
 #### `ShoppingLists`
 
-One document per user list. Items are embedded as an array within the list document — no separate items container needed at this scale.
+One active list per household, plus one document per historical completion. Items are embedded as an array within the list document — no separate items container needed at this scale.
 
 - **Partition key:** `/listId`
+- `listId` is a **stable per-household identifier**, assigned once when the user's profile is first created and never rotated. Multiple documents may share the same `listId`: exactly one with `status = "active"`, any number with `status = "completed"`. This keeps all of a household's history in a single partition and, critically, keeps share codes (which bind to `listId`) valid across completions.
+- `id` is per-document and unique within the partition.
 
 ```json
 {
@@ -458,11 +461,20 @@ public class ShoppingListDocument
     [JsonProperty("items")]
     public List<ShoppingItemDocument> Items { get; set; } = new();
 
+    // "active" or "completed". Exactly one active list per user. Legacy docs without
+    // this field are treated as active by the active-list query.
+    [JsonProperty("status")]
+    public string Status { get; set; }
+
     [JsonProperty("createdAt")]
     public DateTime CreatedAt { get; set; }
 
     [JsonProperty("updatedAt")]
     public DateTime UpdatedAt { get; set; }
+
+    // Set when the list is marked completed; null while active.
+    [JsonProperty("completedAt")]
+    public DateTime? CompletedAt { get; set; }
 }
 
 public class ShoppingItemDocument
@@ -497,6 +509,15 @@ public class ShoppingItemDocument
 
     [JsonProperty("updatedAt")]
     public DateTime UpdatedAt { get; set; }
+
+    /// <summary>
+    /// Set true at list completion for items the shopper actually bought.
+    /// Items left unbought (carried over to the next list) and items on the
+    /// active list both read false. Persisted on completed list documents
+    /// for analytics (purchase frequency, never-bought items, fulfilment).
+    /// </summary>
+    [JsonProperty("isPurchased")]
+    public bool IsPurchased { get; set; }
 }
 
 // ShareCodes container
@@ -600,23 +621,6 @@ Returns the current user's profile.
 
 ---
 
-#### `POST /api/users/subscription`
-
-Syncs subscription status after a RevenueCat restore purchase.
-
-**Auth:** Auth0 JWT
-
-**Request:**
-```json
-{
-  "isSubscriber": true
-}
-```
-
-**Response `200 OK`:** Returns updated user profile (same shape as GET profile).
-
----
-
 ### Shopping List
 
 > **Authentication note for all list endpoints:** `userId` resolution is handled by authentication middleware before requests reach controllers. For JWT requests, `JwtBearerAuthentication` extracts `userId` from the `sub` claim. For share code requests, `ShareCodeAuthMiddleware` validates the code (checks not expired, not revoked), resolves `ownerUserId`, and injects it as a synthetic claim. Controllers read `userId` from the claims principal — they do not repeat this validation.
@@ -631,7 +635,7 @@ Returns the full shopping list for the authenticated user or guest. Called by th
 1. Determine the caller's identity from the claims principal injected by the authentication middleware:
    - If authenticated via JWT: the `userId` is the Auth0 `sub` claim extracted by `JwtBearerAuthentication`.
    - If authenticated via share code: the `userId` is the `ownerUserId` injected as a synthetic claim by `ShareCodeAuthMiddleware`. The middleware has already validated the share code (not expired, not revoked) before this point — the controller does not need to re-validate it.
-2. Retrieve the `ShoppingListDocument` from the `ShoppingLists` container where `ownerUserId == userId`. Return `404 Not Found` if no list exists.
+2. Retrieve the active `ShoppingListDocument` from the `ShoppingLists` container where `ownerUserId == userId` AND (`status` is undefined OR `status == "active"`). Return `404 Not Found` if no active list exists.
 3. Map the `ShoppingListDocument` and its embedded `items` array to the response shape.
 4. Return `200 OK` with the full list.
 
@@ -680,7 +684,7 @@ Adds a new item to the shopping list.
 1. Read `userId` from the claims principal injected by authentication middleware (JWT or `ShareCodeAuthMiddleware`). This is available as `User.FindFirst(ClaimTypes.NameIdentifier)?.Value` — no container lookup is needed here.
 2. Trim `description`. Return `400 Bad Request` if the trimmed value is empty.
 3. Trim `notes`. Set to `null` if the trimmed value is empty.
-4. Retrieve the `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId` as the owner. Return `404 Not Found` if no list exists for this user (should not occur in normal operation — list is created on first profile save).
+4. Retrieve the active `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId` as the owner. Return `404 Not Found` if no active list exists for this user (should not occur in normal operation — an active list always exists after first profile save and is replaced by `POST /api/shopping-list/complete`).
 5. Generate a new `id` for the item using `Guid.NewGuid().ToString()`.
 6. Resolve `addedBy`: for JWT-authenticated users, retrieve `UserDocument.DisplayName` from the `Users` container; for share code guests, read the `RecipientName` claim from the injected claims principal (`User.FindFirst("RecipientName")?.Value`).
 7. Construct a new `ShoppingItemDocument` with the provided fields, the generated `id`, resolved `addedBy`, `photoUrl = null`, `confidence = null`, and `createdAt`/`updatedAt` set to `DateTime.UtcNow`.
@@ -690,6 +694,37 @@ Adds a new item to the shopping list.
 11. Return `201 Created` with the newly created `ShoppingItemDocument` serialised as the response body.
 
 **Response `201 Created`:** Returns the created item.
+
+---
+
+#### `POST /api/shopping-list/complete`
+
+Marks the user's active shopping list as completed and creates a fresh active list. Items the shopper didn't buy (named in `unboughtItemIds`) carry over as fresh copies on the new active list; items the shopper bought are flagged `isPurchased = true` on the now-completed document so analytics can read per-trip fulfilment history. Called by the app when the user finishes shopping.
+
+**Auth:** Auth0 JWT or `X-Share-Code` header. Either the owner or a share-code guest can complete (the guest is often the one actually shopping).
+
+**Request:** Body is optional. When provided:
+```json
+{ "unboughtItemIds": ["<itemId>", "<itemId>"] }
+```
+Empty body, missing body, or `"unboughtItemIds": []` means the shopper bought every item — the new active list will be empty (matches the legacy behaviour of this endpoint).
+
+**Behaviour:**
+1. Read `userId` from the claims principal.
+2. Retrieve the active `ShoppingListDocument` (same query as `GET /api/shopping-list`). Return `404 Not Found` if none exists.
+3. If the active list has zero items, return `400 Bad Request` with `"Cannot complete an empty list."`.
+4. Dedupe `unboughtItemIds`. If any id is not present on the active list's `items`, return `400 Bad Request` with `"Unknown item id(s): ...."` and make no writes.
+5. On every item of the active list, set `isPurchased = !unboughtItemIds.Contains(item.id)` and `updatedAt = DateTime.UtcNow`. Items in `unboughtItemIds` keep `isPurchased = false` (they were left behind for the next trip).
+6. Build the carry-over set: for each item whose `id` is in `unboughtItemIds`, project to a new `ShoppingItemDocument` with a fresh `id` (`Guid.NewGuid().ToString()`), fresh `createdAt`/`updatedAt`, `isPurchased = false`, and copy `description`, `brand`, `knownAs`, `size`, `quantity`, `notes`, `addedBy`, `addedByMethod`, `photoUrl`, `confidence` verbatim. `photoUrl` is reused as-is — the blob is unaffected.
+7. Create a new `ShoppingListDocument` for the same `ownerUserId` with a fresh `id` but **reusing the existing `listId`** (so the new document lands in the same partition as the one being completed). `items =` the carry-over set, `status = "active"`, `createdAt`/`updatedAt = DateTime.UtcNow`. Write it to the container.
+8. On the previously active list, set `status = "completed"`, `completedAt = DateTime.UtcNow`, `updatedAt = DateTime.UtcNow`. Replace it in the container — the same write also persists the per-item `isPurchased` flags from step 5.
+9. Return `200 OK` with the new active list (same shape as `GET /api/shopping-list`).
+
+> **Why reuse `listId`:** share codes bind to `listId`. Minting a fresh `listId` on each completion would orphan every active share code for that household. Reusing `listId` keeps guest access seamless across trips and leaves share-code bookkeeping untouched.
+
+> **Failure mode:** the order is create-new-first. If step 8 fails after step 7 succeeds, two `status = "active"` documents coexist in the same partition. The active-list query breaks the tie with `ORDER BY c.createdAt DESC`, so the newer list wins and a retry will reject with `400` if it is empty (or proceed normally if it has carried items). Surface the error and log it for operator follow-up to re-mark the older document `completed`.
+
+**Response `200 OK`:** The new active list (containing the carried-over items, or empty if every item was bought), in the same shape as `GET /api/shopping-list`. Each item response includes the new `isPurchased` field.
 
 ---
 
@@ -704,8 +739,7 @@ Updates an existing item.
 {
   "description": "Bananas",
   "quantity": 4,
-  "notes": "Ripe ones",
-  "photoUrl": null
+  "notes": "Ripe ones"
 }
 ```
 
@@ -713,9 +747,9 @@ Updates an existing item.
 1. Read `userId` from the claims principal injected by authentication middleware (JWT or `ShareCodeAuthMiddleware`). This is available as `User.FindFirst(ClaimTypes.NameIdentifier)?.Value` — no container lookup is needed here.
 2. Trim `description`. Return `400 Bad Request` if the trimmed value is empty.
 3. Trim `notes`. Set to `null` if the trimmed value is empty.
-4. Retrieve the `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId` as the owner. Return `404 Not Found` if no list exists.
+4. Retrieve the active `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId` as the owner. Return `404 Not Found` if no active list exists.
 5. Locate the item within the `items` array where `item.id == itemId`. Return `404 Not Found` if no matching item exists.
-6. Update the located item's fields: `description`, `quantity`, `notes`, `photoUrl`.
+6. Update the located item's fields: `description`, `quantity`, `notes`. The item's `photoUrl` is preserved; it can only be set by the photo-upload endpoint.
 7. Set `updatedAt` on the item to `DateTime.UtcNow`.
 8. Set `updatedAt` on the `ShoppingListDocument` to `DateTime.UtcNow`.
 9. Write the updated `ShoppingListDocument` back to the `ShoppingLists` container using a replace/upsert operation.
@@ -733,7 +767,7 @@ Deletes an item from the list.
 
 **Behaviour:**
 1. Read `userId` from the claims principal injected by authentication middleware (JWT or `ShareCodeAuthMiddleware`). This is available as `User.FindFirst(ClaimTypes.NameIdentifier)?.Value` — no container lookup is needed here.
-2. Retrieve the `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId` as the owner. Return `404 Not Found` if no list exists.
+2. Retrieve the active `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId` as the owner. Return `404 Not Found` if no active list exists.
 3. Locate the item within the `items` array where `item.id == itemId`. Return `404 Not Found` if no matching item exists.
 4. Remove the located item from the `items` array.
 5. Set `updatedAt` on the `ShoppingListDocument` to `DateTime.UtcNow`.
@@ -750,20 +784,25 @@ Uploads a photo to Azure Blob Storage, sends it to the Claude API for recognitio
 
 **Auth:** Auth0 JWT or `X-Share-Code` header
 
-**Request:** `multipart/form-data`, field name `image` (JPEG, already compressed client-side to max 1024px / 85% quality)
+**Request:** `multipart/form-data`, field name `image`. Accepted formats: JPEG, PNG, or WebP. Clients should compress photos to max 1024px / 85% quality before upload.
 
 **Behaviour:**
 1. Read `userId` from the claims principal injected by authentication middleware (JWT or `ShareCodeAuthMiddleware`). This is available as `User.FindFirst(ClaimTypes.NameIdentifier)?.Value` — no container lookup is needed here.
-2. Validate the uploaded file is JPEG (`image/jpeg`). Return `400 Bad Request` for other content types.
-3. Validate file size does not exceed 2MB. Return `400 Bad Request` if exceeded.
-4. Generate a unique blob name: `{userId}/{guid}.jpg`.
+2. Validate the uploaded file via `ImageFileValidator`. All checks below return `400 Bad Request`:
+   - File is present and non-empty.
+   - File size does not exceed **3MB**.
+   - `Content-Type` is one of `image/jpeg`, `image/png`, `image/webp`.
+   - The first bytes match the declared `Content-Type`'s magic signature (defends against renamed / disguised files).
+   - The bytes decode as a valid image via `SixLabors.ImageSharp.Image.Identify` (defends against malformed / truncated files).
+   - Image dimensions do not exceed **8192 × 8192** pixels (defends against decode bombs).
+3. Generate a unique blob name using the **detected** extension: `{userId}/{guid}.{jpg|png|webp}`.
 5. Upload the image stream directly to the `photos` container in Azure Blob Storage via `BlobStorageService.UploadAsync(image.OpenReadStream())`. Do not load the entire file into memory — stream it directly.
 6. Capture the resulting public blob URL.
 7. Read the image stream (rewind or re-open) and Base64-encode it.
 8. Send the Base64-encoded image to the Claude API with the image recognition system prompt (see Claude API Integration section). Include the confidence self-assessment instruction in the prompt.
 9. Parse the Claude response JSON. If parsing fails, delete the uploaded blob and return `422 Unprocessable Entity`.
    - If `confidence` is `"low"`: the item is still created and returned with `confidence: "low"`. The blob is **not** deleted — the URL is stored with the item in case the user later confirms it manually via the Detail Screen. If the user dismisses the low-confidence result without adding the item, the blob remains in storage as an orphan and will be cleaned up by the future scheduled cleanup job.
-10. Retrieve the `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId`. Return `404 Not Found` if no list exists.
+10. Retrieve the active `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId`. Return `404 Not Found` if no active list exists.
 11. Construct a new `ShoppingItemDocument` with:
     - `id` = `Guid.NewGuid().ToString()`
     - `description` from Claude response
@@ -820,7 +859,7 @@ Accepts an audio recording, transcribes it via Azure AI Speech, extracts shoppin
 5. If transcription fails or returns empty text, return `422 Unprocessable Entity` with `{ "error": "Could not transcribe audio" }`.
 6. Send the transcribed text to the Claude API with the voice recognition system prompt (see Claude API Integration section) to extract structured shopping items.
 7. If Claude returns a response that cannot be parsed as valid JSON, or returns an empty items array, return `422 Unprocessable Entity` with `{ "error": "Could not recognise items from speech" }`.
-8. Retrieve the `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId`. Return `404 Not Found` if no list exists.
+8. Retrieve the active `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId`. Return `404 Not Found` if no active list exists.
 9. Resolve `addedBy`: for JWT-authenticated users, retrieve `UserDocument.DisplayName` from the `Users` container; for share code guests, read the `RecipientName` claim from the injected claims principal (`User.FindFirst("RecipientName")?.Value`).
 10. For each item returned by Claude, construct a new `ShoppingItemDocument` with:
     - `id` = `Guid.NewGuid().ToString()`
@@ -879,46 +918,40 @@ Accepts an audio recording, transcribes it via Azure AI Speech, extracts shoppin
 
 #### `POST /api/share/generate-code`
 
-Generates a unique share code for a subscriber.
+Generates a unique share code for a subscriber. The recipient's name is **not** supplied here — the guest provides it when they confirm the code.
 
 **Auth:** Auth0 JWT, `isSubscriber` must be `true` (checked against Cosmos DB)
 
-**Request:**
-```json
-{
-  "recipientName": "Natalie"
-}
-```
+**Request:** empty body (`{}` or no body).
 
 **Behaviour:**
 1. Extract `userId` from the Auth0 JWT `sub` claim.
-2. Trim `recipientName`. Return `400 Bad Request` if the trimmed value is empty.
-3. Retrieve the `UserDocument` from the `Users` container using `userId` as the partition key. Return `404 Not Found` if no user document exists.
-4. Check `userDocument.IsSubscriber`. If `false`, return `403 Forbidden` with `{ "error": "Sharing requires an active subscription." }`.
-5. Retrieve the `ShoppingListDocument` from the `ShoppingLists` container where `ownerUserId == userId`. Return `404 Not Found` if no list exists.
-6. Capture the `listId` from the retrieved `ShoppingListDocument`.
-7. Generate a 6-character uppercase alphanumeric share code using `RandomNumberGenerator` (e.g. `6Y812C`). Use only characters `A-Z` and `0-9` to avoid ambiguous characters (`0`/`O`, `1`/`I`/`L`).
-8. Query the `ShareCodes` container to check whether an active (non-revoked, non-expired) code with the same value already exists. If a collision is found, regenerate and re-check. Retry up to 5 times. If a unique code cannot be generated after 5 attempts, return `409 Conflict` with `{ "error": "Could not generate a unique code. Please try again." }`.
-9. Construct a new `ShareCodeDocument`:
+2. Retrieve the `UserDocument` from the `Users` container using `userId` as the partition key. Return `404 Not Found` if no user document exists.
+3. Check `userDocument.IsSubscriber`. If `false`, return `403 Forbidden` with `{ "error": "Sharing requires an active subscription." }`.
+4. Retrieve the active `ShoppingListDocument` from the `ShoppingLists` container where `ownerUserId == userId` AND (`status` is undefined OR `status == "active"`). Return `404 Not Found` if no active list exists. The `listId` is a stable per-household identifier that survives completions (see `ShoppingLists` schema notes), so the value captured here remains the partition the share code will resolve into for the rest of its life.
+5. Capture the `listId` from the retrieved `ShoppingListDocument`.
+6. Generate a 6-character uppercase alphanumeric share code using `RandomNumberGenerator` (e.g. `6Y812C`). Use only characters `A-Z` and `0-9` to avoid ambiguous characters (`0`/`O`, `1`/`I`/`L`).
+7. Query the `ShareCodes` container to check whether an active (non-revoked, non-expired) code with the same value already exists. If a collision is found, regenerate and re-check. Retry up to 5 times. If a unique code cannot be generated after 5 attempts, return `409 Conflict` with `{ "error": "Could not generate a unique code. Please try again." }`.
+8. Construct a new `ShareCodeDocument`:
     - `id` = `Guid.NewGuid().ToString()`
-    - `code` = the generated code from step 7
-    - `listId` = from step 6
+    - `code` = the generated code from step 6
+    - `listId` = from step 5
     - `ownerUserId` = `userId`
-    - `recipientName` = trimmed value from step 2
+    - `recipientName` = `null` (populated at confirmation time)
     - `confirmed` = `false`
     - `confirmedAt` = `null`
     - `revokedAt` = `null`
     - `expiresAt` = `DateTime.UtcNow.AddHours(24)` (configurable via `PantryPunk:ShareCode:ExpiryHours` in Azure App Configuration)
     - `createdAt` = `DateTime.UtcNow`
-10. Write the new `ShareCodeDocument` to the `ShareCodes` container.
-11. Return `200 OK` with the created share code details.
+9. Write the new `ShareCodeDocument` to the `ShareCodes` container.
+10. Return `200 OK` with the created share code details.
 
 **Response `200 OK`:**
 ```json
 {
   "shareId": "sharecode-uuid",
   "code": "6Y812C",
-  "recipientName": "Natalie",
+  "recipientName": null,
   "confirmed": false,
   "expiresAt": "2026-04-12T08:00:00Z"
 }
@@ -928,36 +961,44 @@ Generates a unique share code for a subscriber.
 
 #### `POST /api/share/confirm-code`
 
-Non-subscriber submits a code to join a shared list. Public endpoint — no authentication required.
+Non-subscriber submits a code to join a shared list **and provides their own display name**. Public endpoint — no authentication required.
 
 **Request:**
 ```json
 {
-  "code": "6Y812C"
+  "code": "6Y812C",
+  "recipientName": "Natalie"
 }
 ```
 
 **Behaviour:**
+- Trim `code` and `recipientName`. Return `400 Bad Request` if either is empty after trimming.
 - Look up the `ShareCodeDocument` by `code` (partition key lookup — efficient).
 - Return `404` if code not found.
 - Return `410 Gone` if `expiresAt` has passed and `confirmed == false`.
 - Return `410 Gone` if `revokedAt` is set.
-- If valid: set `confirmed = true`, `confirmedAt = DateTime.UtcNow`. Write the updated document back to the `ShareCodes` container.
-- Return `200 OK` with `recipientName` so the app can store it as the guest's display name.
+- If valid and not yet confirmed: set `recipientName = <trimmed request value>`, `confirmed = true`, `confirmedAt = DateTime.UtcNow`. Write the updated document back to the `ShareCodes` container.
+- If valid and already confirmed (idempotent re-confirm): leave the stored `recipientName` intact — first-confirm wins. The new name in the request is ignored.
+- Return `200 OK` with the full `ShareCodeResponse` (same shape as `GET /api/share` items). The `shareId` field is what the guest passes to `DELETE /api/share/:shareId` to leave the list (self-revoke).
 
 **Response `200 OK`:**
 ```json
 {
-  "success": true,
-  "recipientName": "Natalie"
+  "shareId": "sharecode-uuid",
+  "recipientName": "Natalie",
+  "code": "6Y812C",
+  "confirmed": true,
+  "confirmedAt": "2026-04-11T10:05:00Z",
+  "expiresAt": "2026-04-12T08:00:00Z",
+  "createdAt": "2026-04-11T08:00:00Z"
 }
 ```
 
 **Response `410 Gone`:**
 ```json
 {
-  "success": false,
-  "error": "Invalid, expired, or revoked code"
+  "error": "Invalid, expired, or revoked code",
+  "traceId": "..."
 }
 ```
 
@@ -965,15 +1006,17 @@ Non-subscriber submits a code to join a shared list. Public endpoint — no auth
 
 #### `GET /api/share`
 
-Returns all share codes created by the subscriber (for the Share It screen list). Excludes revoked codes.
+Returns share codes created by the subscriber (for the Share It screen list). Excludes revoked codes and unconfirmed (pending) codes — only codes a guest has actually accepted are returned. Subscribers only — share-code guests are rejected.
 
-**Auth:** Auth0 JWT
+**Auth:** Auth0 JWT + isSubscriber
 
 **Behaviour:**
-1. Extract `userId` from the Auth0 JWT `sub` claim.
-2. Query the `ShareCodes` container for all documents where `ownerUserId == userId` and `revokedAt == null`. (Note: the container is partitioned by `/code`, so this is a cross-partition query scoped by `ownerUserId`. At household scale this is negligible — typically < 10 documents.)
-3. Map each `ShareCodeDocument` to the response shape.
-4. Return `200 OK` with the array sorted by `createdAt` ascending.
+1. Extract `userId` from the Auth0 JWT `sub` claim. Share-code guests (who authenticate via `X-Share-Code`) are rejected by the `RegisteredUser` policy and never reach this handler.
+2. Load the caller's `UserDocument` and return `403 Forbidden` with `{ "error": "Sharing requires an active subscription." }` if `isSubscriber` is false.
+3. Query the `ShareCodes` container for all documents where `ownerUserId == userId` and `revokedAt == null`. (Note: the container is partitioned by `/code`, so this is a cross-partition query scoped by `ownerUserId`. At household scale this is negligible — typically < 10 documents.)
+4. Filter out documents where `confirmed == false` (pending/unaccepted codes are not returned).
+5. Map each remaining `ShareCodeDocument` to the response shape.
+6. Return `200 OK` with the array sorted by `createdAt` ascending.
 
 **Response `200 OK`:**
 ```json
@@ -992,18 +1035,24 @@ Returns all share codes created by the subscriber (for the Share It screen list)
 }
 ```
 
+Only confirmed codes are returned, so `confirmed` is always `true` and `recipientName` is always populated. Unconfirmed codes remain retrievable via `POST /api/share/generate-code` (which returns the freshly generated code) but do not appear in this list until a guest confirms them.
+
 ---
 
 #### `DELETE /api/share/:shareId`
 
-Revokes a share code. The associated guest loses list access on their next API call.
+Revokes a share code. The associated guest loses list access on their next API call. Accepts two caller modes:
 
-**Auth:** Auth0 JWT
+1. **Subscriber (Auth0 JWT + `isSubscriber`):** may revoke any share code they own.
+2. **Share-code guest (`X-Share-Code` header):** may revoke **only** the share code they authenticated with. This is a "leave this list" action.
+
+**Auth:** Auth0 JWT + isSubscriber, **or** `X-Share-Code` (self only)
 
 **Behaviour:**
-- The `ShareCodes` container is partitioned by `/code`, not `/id`. A direct point-read by `shareId` alone would require a cross-partition query. To avoid this, perform a query scoped to the current user: `SELECT * FROM c WHERE c.id = @shareId AND c.ownerUserId = @userId`. This is efficient because the `ownerUserId` filter limits the scan, and the container is small at household scale.
-- Return `404 Not Found` if no document with the given `shareId` exists for this user.
-- Verify the requesting `userId` matches `ownerUserId`. Return `403 Forbidden` if not (this is also enforced by the query above, but checked explicitly for clarity).
+- If the caller is a share-code guest, compare the route `shareId` against the document Id of the share code they authenticated with. Return `403 Forbidden` with `{ "error": "You can only revoke your own share code." }` if they differ.
+- If the caller is a JWT user, load their `UserDocument` and return `403 Forbidden` with `{ "error": "Sharing requires an active subscription." }` if `isSubscriber` is false.
+- The `ShareCodes` container is partitioned by `/code`, not `/id`. A direct point-read by `shareId` alone would require a cross-partition query. To avoid this, perform a query scoped to the owner: `SELECT * FROM c WHERE c.id = @shareId AND c.ownerUserId = @userId`. For share-code guests the `userId` is the owner's id (injected by the middleware), so the ownership check is preserved.
+- Return `404 Not Found` if no document with the given `shareId` exists for this owner.
 - Set `revokedAt = DateTime.UtcNow`.
 - Write the updated `ShareCodeDocument` back to the container.
 - Do not delete the document — soft delete for audit trail.
@@ -1109,7 +1158,7 @@ var userMessage = new
     source = new
     {
         type = "base64",
-        media_type = "image/jpeg",
+        media_type = mediaType, // "image/jpeg" | "image/png" | "image/webp" — determined by ImageFileValidator
         data = Convert.ToBase64String(imageBytes)
     }
 };
@@ -1442,10 +1491,10 @@ _logger.LogInformation(
 - **CORS** — restrict to the app's bundle identifier / known origins only. Do not use wildcard `*` in production.
 - **Rate limiting** — apply rate limiting middleware (`Microsoft.AspNetCore.RateLimiting`) on AI endpoints (`/api/shopping-list/items/photo`, `/api/shopping-list/items/voice`) to protect Claude API costs. Suggested: 30 requests per user per minute.
 - **Input validation** — use Data Annotations or FluentValidation on all request DTOs. Reject requests with oversized payloads.
-- **Max upload size** — enforce a 2MB limit on photo and audio file uploads in `Program.cs`:
+- **Max upload size** — enforce a 3MB limit on photo uploads (audio still capped at 2MB in the voice controller) via Kestrel in `Program.cs`:
   ```csharp
   builder.WebHost.ConfigureKestrel(options =>
-      options.Limits.MaxRequestBodySize = 2 * 1024 * 1024); // 2MB
+      options.Limits.MaxRequestBodySize = 3 * 1024 * 1024); // 3MB
   ```
 - **Secrets** — all secrets (Cosmos DB connection string, Claude API key, Auth0 credentials, RevenueCat webhook secret) stored in Azure Key Vault. Never committed to source control.
 - **Soft deletes** — share codes use soft delete (`revokedAt`) for audit trail. Do not hard-delete security-relevant documents.

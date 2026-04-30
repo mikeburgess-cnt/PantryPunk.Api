@@ -1,5 +1,6 @@
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
 using PantryPunk.Api.Extensions;
 using PantryPunk.Api.Infrastructure;
@@ -7,9 +8,6 @@ using PantryPunk.Api.Middleware;
 using PantryPunk.Api.Models.Responses;
 
 var builder = WebApplication.CreateBuilder(args);
-
-// Key Vault (must be first so secrets are available to subsequent config)
-builder.Configuration.AddKeyVault();
 
 // Azure App Configuration + Feature Management
 builder.AddAppConfiguration();
@@ -23,16 +21,74 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     {
         options.Authority = $"https://{auth0Domain}/";
         options.Audience = auth0Audience;
+        options.IncludeErrorDetails = true;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             NameClaimType = System.Security.Claims.ClaimTypes.NameIdentifier
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = ctx =>
+            {
+                var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("Auth0");
+                var authHeader = ctx.Request.Headers.Authorization.ToString();
+                var hasBearer = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase);
+                logger.LogInformation(
+                    "JWT message received for {Method} {Path}. AuthHeader length: {HeaderLen}. Bearer prefix: {HasBearer}. Token length: {TokenLen}",
+                    ctx.Request.Method,
+                    ctx.Request.Path,
+                    authHeader.Length,
+                    hasBearer,
+                    hasBearer ? authHeader.Length - 7 : 0);
+                return Task.CompletedTask;
+            },
+            OnAuthenticationFailed = ctx =>
+            {
+                var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("Auth0");
+                var messages = new List<string>();
+                for (var ex = ctx.Exception; ex != null; ex = ex.InnerException)
+                {
+                    messages.Add($"{ex.GetType().Name}: {ex.Message}");
+                }
+                logger.LogWarning(ctx.Exception,
+                    "JWT auth failed for {Path}. Authority={Authority} Audience={Audience}. Chain: {Chain}",
+                    ctx.Request.Path,
+                    $"https://{auth0Domain}/",
+                    auth0Audience,
+                    string.Join(" -> ", messages));
+                return Task.CompletedTask;
+            },
+            OnChallenge = ctx =>
+            {
+                var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("Auth0");
+                logger.LogWarning(
+                    "JWT challenge issued for {Method} {Path}. Error: {Error}. Description: {Description}. AuthFailure: {AuthFailure}",
+                    ctx.Request.Method,
+                    ctx.Request.Path,
+                    ctx.Error,
+                    ctx.ErrorDescription,
+                    ctx.AuthenticateFailure?.Message);
+                return Task.CompletedTask;
+            },
+            OnTokenValidated = ctx =>
+            {
+                var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("Auth0");
+                logger.LogInformation("JWT validated for sub {Sub}",
+                    ctx.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value);
+                return Task.CompletedTask;
+            }
         };
     });
 
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("RegisteredUser", policy =>
-        policy.RequireAuthenticatedUser());
+        policy.RequireAuthenticatedUser()
+              .RequireAssertion(ctx => !ctx.User.IsShareCodeUser()));
 });
 
 // Infrastructure
@@ -57,11 +113,20 @@ builder.Services.AddOpenApi();
 // Health checks
 builder.Services.AddHealthChecks();
 
-// Rate limiting for AI endpoints
+// HSTS (Strict-Transport-Security)
+builder.Services.AddHsts(options =>
+{
+    options.MaxAge = TimeSpan.FromDays(365);
+    options.IncludeSubDomains = true;
+    options.Preload = true;
+});
+
+// Rate limiting
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = 429;
 
+    // Per-user AI limiter (image and voice endpoints)
     options.AddPolicy("ai", context =>
     {
         var userId = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "anonymous";
@@ -71,12 +136,45 @@ builder.Services.AddRateLimiter(options =>
             Window = TimeSpan.FromMinutes(1)
         });
     });
+
+    // Tight per-IP limiter for share-code confirm (unauthenticated, brute-force surface)
+    options.AddPolicy("share-confirm", context =>
+    {
+        var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter($"sc:{ip}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = builder.Configuration.GetValue("PantryPunk:RateLimit:ShareConfirmPerHour", 10),
+            Window = TimeSpan.FromHours(1)
+        });
+    });
+
+    // Global catch-all per-IP limiter — requires H3 (ForwardedHeaders) for real client IP
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
+    {
+        var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter($"g:{ip}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = builder.Configuration.GetValue("PantryPunk:RateLimit:PerIpPerMinute", 120),
+            Window = TimeSpan.FromMinutes(1)
+        });
+    });
 });
 
-// Kestrel max request body size (2MB)
+// Kestrel max request body size: 3MB payload + ~64KB multipart overhead.
+// Sized for the image upload limit (audio validator enforces its own 2MB cap)
+// so the validator can return a 400 rather than Kestrel returning 413 first.
 builder.WebHost.ConfigureKestrel(options =>
-    options.Limits.MaxRequestBodySize = 2 * 1024 * 1024);
+    options.Limits.MaxRequestBodySize = 3 * 1024 * 1024 + 64 * 1024);
 var app = builder.Build();
+
+// One-shot startup log so we can confirm in App Insights what Auth0 values
+// the running instance was actually configured with.
+app.Logger.LogWarning(
+    "Auth0 config at startup: Authority=https://{Domain}/ Audience={Audience} DomainPresent={DomainPresent} AudiencePresent={AudiencePresent}",
+    auth0Domain,
+    auth0Audience,
+    !string.IsNullOrWhiteSpace(auth0Domain),
+    !string.IsNullOrWhiteSpace(auth0Audience));
 
 // Middleware pipeline order matters
 if (app.Environment.IsDevelopment())
@@ -88,16 +186,47 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+    app.UseHsts();
+}
 
-// API key validation (temporary — will be replaced by OAuth)
-app.UseMiddleware<ApiKeyMiddleware>();
+app.Use(async (ctx, next) =>
+{
+    var h = ctx.Response.Headers;
+    h["X-Content-Type-Options"] = "nosniff";
+    h["X-Frame-Options"] = "DENY";
+    h["Referrer-Policy"] = "no-referrer";
+    h["Permissions-Policy"] =
+        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()";
+    h["Cross-Origin-Opener-Policy"] = "same-origin";
+    h["Cross-Origin-Resource-Policy"] = "same-origin";
+    // API never renders HTML — strict CSP. Exempt Swagger/OpenAPI paths so Dev UI renders.
+    if (!ctx.Request.Path.StartsWithSegments("/swagger") && !ctx.Request.Path.StartsWithSegments("/openapi"))
+    {
+        h["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'";
+    }
+    await next();
+});
 
 // Azure App Configuration refresh (must be before UseRouting)
 if (!string.IsNullOrEmpty(builder.Configuration["AzureAppConfiguration:Endpoint"]))
 {
     app.UseAzureAppConfiguration();
 }
+
+// Trust the single XFF hop from the Azure App Service front-end proxy.
+// KnownNetworks/KnownProxies are cleared so only the platform's XFF hop is unwrapped —
+// clients cannot spoof the header by adding their own.
+var forwardedOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+    ForwardLimit = 1
+};
+forwardedOptions.KnownIPNetworks.Clear();
+forwardedOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedOptions);
 
 app.UseAuthentication();
 app.UseMiddleware<ShareCodeAuthMiddleware>();
@@ -125,6 +254,6 @@ app.UseExceptionHandler(errorApp =>
 });
 
 app.MapControllers();
-app.MapHealthChecks("/health");
+app.MapHealthChecks("/health").DisableRateLimiting();
 
 app.Run();

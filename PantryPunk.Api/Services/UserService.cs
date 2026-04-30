@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using PantryPunk.Api.Extensions;
 using PantryPunk.Api.Models.Documents;
 using PantryPunk.Api.Models.Requests;
 using PantryPunk.Api.Models.Responses;
@@ -43,16 +45,17 @@ public class UserService
         {
             try
             {
+                var listId = Guid.NewGuid().ToString();
                 var list = new ShoppingListDocument
                 {
-                    Id = Guid.NewGuid().ToString(),
-                    ListId = Guid.NewGuid().ToString(),
+                    Id = listId,
+                    ListId = listId,
                     OwnerUserId = userId,
                     Items = new List<ShoppingItemDocument>(),
+                    Status = ShoppingListStatus.Active,
                     CreatedAt = now,
                     UpdatedAt = now
                 };
-                list.Id = list.ListId;
                 await _listRepository.CreateAsync(list);
             }
             catch (Exception ex)
@@ -65,25 +68,33 @@ public class UserService
         return MapToResponse(document);
     }
 
+    public virtual async Task<UserDocument?> EnsureExistsAsync(ClaimsPrincipal principal)
+    {
+        if (principal.IsShareCodeUser()) return null;
+
+        var userId = principal.GetUserId();
+        var existing = await _userRepository.GetByIdAsync(userId);
+        if (existing != null) return existing;
+
+        var now = DateTime.UtcNow;
+        var document = new UserDocument
+        {
+            Id = userId,
+            UserId = userId,
+            DisplayName = principal.GetNameClaim() ?? string.Empty,
+            Email = principal.GetEmailClaim() ?? string.Empty,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        await _userRepository.UpsertAsync(document);
+        _logger.LogInformation("Auto-created user {UserId} from JWT claims", userId);
+        return document;
+    }
+
     public virtual async Task<UserProfileResponse?> GetProfileAsync(string userId)
     {
         var document = await _userRepository.GetByIdAsync(userId);
         return document == null ? null : MapToResponse(document);
-    }
-
-    public virtual async Task<UserProfileResponse?> UpdateSubscriptionAsync(string userId, UpdateSubscriptionRequest request)
-    {
-        var document = await _userRepository.GetByIdAsync(userId);
-        if (document == null) return null;
-
-        document.IsSubscriber = request.IsSubscriber;
-        document.UpdatedAt = DateTime.UtcNow;
-
-        if (request.IsSubscriber && document.SubscribedAt == null)
-            document.SubscribedAt = DateTime.UtcNow;
-
-        await _userRepository.UpsertAsync(document);
-        return MapToResponse(document);
     }
 
     public virtual async Task<UserDocument?> GetDocumentAsync(string userId)

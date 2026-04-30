@@ -9,24 +9,45 @@ public class ListService
 {
     private readonly ListRepository _listRepository;
     private readonly UserRepository _userRepository;
+    private readonly BlobSasTokenService _sasTokenService;
 
-    public ListService(ListRepository listRepository, UserRepository userRepository)
+    public ListService(ListRepository listRepository, UserRepository userRepository, BlobSasTokenService sasTokenService)
     {
         _listRepository = listRepository;
         _userRepository = userRepository;
+        _sasTokenService = sasTokenService;
     }
 
-    public async Task<ShoppingListResponse?> GetListAsync(string userId)
+    public async Task<ShoppingListResponse> GetListAsync(string userId)
     {
-        var list = await _listRepository.GetByOwnerUserIdAsync(userId);
-        if (list == null) return null;
-
+        var list = await GetOrCreateActiveAsync(userId);
         return MapToResponse(list);
+    }
+
+    public async Task<ShoppingListDocument> GetOrCreateActiveAsync(string userId)
+    {
+        var list = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
+        if (list != null) return list;
+
+        var now = DateTime.UtcNow;
+        var listId = Guid.NewGuid().ToString();
+        var newList = new ShoppingListDocument
+        {
+            Id = listId,
+            ListId = listId,
+            OwnerUserId = userId,
+            Items = new List<ShoppingItemDocument>(),
+            Status = ShoppingListStatus.Active,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        await _listRepository.CreateAsync(newList);
+        return newList;
     }
 
     public async Task<ShoppingItemResponse?> AddItemAsync(string userId, AddItemRequest request, string addedBy)
     {
-        var list = await _listRepository.GetByOwnerUserIdAsync(userId);
+        var list = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
         if (list == null) return null;
 
         var now = DateTime.UtcNow;
@@ -50,7 +71,7 @@ public class ListService
 
     public async Task<ShoppingItemResponse?> UpdateItemAsync(string userId, string itemId, UpdateItemRequest request)
     {
-        var list = await _listRepository.GetByOwnerUserIdAsync(userId);
+        var list = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
         if (list == null) return null;
 
         var item = list.Items.FirstOrDefault(i => i.Id == itemId);
@@ -60,7 +81,6 @@ public class ListService
         item.Description = request.Description.Trim();
         item.Quantity = request.Quantity;
         item.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
-        item.PhotoUrl = request.PhotoUrl;
         item.UpdatedAt = now;
 
         list.UpdatedAt = now;
@@ -71,7 +91,7 @@ public class ListService
 
     public async Task<bool> DeleteItemAsync(string userId, string itemId)
     {
-        var list = await _listRepository.GetByOwnerUserIdAsync(userId);
+        var list = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
         if (list == null) return false;
 
         var item = list.Items.FirstOrDefault(i => i.Id == itemId);
@@ -86,7 +106,7 @@ public class ListService
 
     public async Task<ShoppingItemResponse?> AddItemDirectAsync(string userId, ShoppingItemDocument itemDoc)
     {
-        var list = await _listRepository.GetByOwnerUserIdAsync(userId);
+        var list = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
         if (list == null) return null;
 
         list.Items.Add(itemDoc);
@@ -98,7 +118,7 @@ public class ListService
 
     public async Task<List<ShoppingItemResponse>?> AddItemsDirectAsync(string userId, List<ShoppingItemDocument> items)
     {
-        var list = await _listRepository.GetByOwnerUserIdAsync(userId);
+        var list = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
         if (list == null) return null;
 
         list.Items.AddRange(items);
@@ -106,6 +126,91 @@ public class ListService
         await _listRepository.ReplaceAsync(list);
 
         return items.Select(MapItemToResponse).ToList();
+    }
+
+    // Create-new-first ordering: if the second write (marking the old list completed) fails,
+    // a retry sees the new empty list and rejects with EmptyListException. The failure leaves
+    // two active-flagged documents in the same partition; GetActiveByOwnerUserIdAsync breaks
+    // the tie by createdAt DESC so the newer empty list wins. Operator cleanup is still
+    // advisable to restore the single-active invariant.
+    public async Task<ShoppingListResponse?> CompleteAsync(string userId, IReadOnlyCollection<string>? unboughtItemIds)
+    {
+        var active = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
+        if (active == null) return null;
+
+        if (active.Items.Count == 0)
+            throw new EmptyListException("Cannot complete an empty list.");
+
+        var unboughtSet = unboughtItemIds is null
+            ? new HashSet<string>()
+            : new HashSet<string>(unboughtItemIds, StringComparer.Ordinal);
+
+        var activeItemIds = active.Items.Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
+        var unknownIds = unboughtSet.Where(id => !activeItemIds.Contains(id)).ToList();
+        if (unknownIds.Count > 0)
+            throw new UnknownItemIdsException($"Unknown item id(s): {string.Join(", ", unknownIds)}.");
+
+        var now = DateTime.UtcNow;
+
+        foreach (var item in active.Items)
+        {
+            item.IsPurchased = !unboughtSet.Contains(item.Id);
+            item.UpdatedAt = now;
+        }
+
+        var carriedItems = active.Items
+            .Where(i => unboughtSet.Contains(i.Id))
+            .Select(i => new ShoppingItemDocument
+            {
+                Id = Guid.NewGuid().ToString(),
+                Description = i.Description,
+                Brand = i.Brand,
+                KnownAs = i.KnownAs,
+                Size = i.Size,
+                Quantity = i.Quantity,
+                AddedBy = i.AddedBy,
+                AddedByMethod = i.AddedByMethod,
+                Notes = i.Notes,
+                PhotoUrl = i.PhotoUrl,
+                Confidence = i.Confidence,
+                CreatedAt = now,
+                UpdatedAt = now,
+                IsPurchased = false
+            })
+            .ToList();
+
+        var newList = new ShoppingListDocument
+        {
+            Id = Guid.NewGuid().ToString(),
+            ListId = active.ListId,
+            OwnerUserId = userId,
+            Items = carriedItems,
+            Status = ShoppingListStatus.Active,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        await _listRepository.CreateAsync(newList);
+
+        active.Status = ShoppingListStatus.Completed;
+        active.CompletedAt = now;
+        active.UpdatedAt = now;
+        await _listRepository.ReplaceAsync(active);
+
+        return MapToResponse(newList);
+    }
+
+    public async Task<ItemPhotoResponse?> GetItemPhotoAsync(string userId, string itemId)
+    {
+        var list = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
+        var item = list?.Items.FirstOrDefault(i => i.Id == itemId);
+        if (item == null || string.IsNullOrEmpty(item.PhotoUrl)) return null;
+
+        var sas = await _sasTokenService.GetReadSasUrlAsync(item.PhotoUrl, TimeSpan.FromHours(1));
+        return new ItemPhotoResponse
+        {
+            PhotoUrl = sas?.Url,
+            ExpiresAt = sas?.ExpiresAt
+        };
     }
 
     public async Task<string?> ResolveAddedByAsync(string userId, string? recipientName)
@@ -132,13 +237,18 @@ public class ListService
         {
             Id = item.Id,
             Description = item.Description,
+            Brand = item.Brand,
+            KnownAs = item.KnownAs,
+            Size = item.Size,
             Quantity = item.Quantity,
             AddedBy = item.AddedBy,
+            AddedByMethod = item.AddedByMethod,
             Notes = item.Notes,
-            PhotoUrl = item.PhotoUrl,
+            HasPhoto = !string.IsNullOrEmpty(item.PhotoUrl),
             Confidence = item.Confidence,
             CreatedAt = item.CreatedAt,
-            UpdatedAt = item.UpdatedAt
+            UpdatedAt = item.UpdatedAt,
+            IsPurchased = item.IsPurchased
         };
     }
 }

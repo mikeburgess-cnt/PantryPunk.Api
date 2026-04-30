@@ -18,7 +18,7 @@ public static class AppConfigurationSetup
         builder.Configuration.AddAzureAppConfiguration(options =>
         {
             options.Connect(new Uri(endpoint), new DefaultAzureCredential())
-                .Select("PantryPunk:*")
+                .ConfigureKeyVault(kv => kv.SetCredential(new DefaultAzureCredential()))
                 .ConfigureRefresh(refresh =>
                 {
                     refresh.Register("PantryPunk:Sentinel", refreshAll: true)

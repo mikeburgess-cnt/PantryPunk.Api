@@ -79,6 +79,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ListService>();
         services.AddScoped<ShareService>();
         services.AddScoped<BlobStorageService>();
+        services.AddSingleton<BlobSasTokenService>();
+        services.AddSingleton<ImageFileValidator>();
         services.AddScoped<ImageRecognitionService>();
         services.AddScoped<VoiceRecognitionService>();
         services.AddScoped<FeatureFlagService>();

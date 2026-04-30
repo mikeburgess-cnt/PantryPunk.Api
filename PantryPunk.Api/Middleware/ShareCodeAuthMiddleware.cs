@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using PantryPunk.Api.Models.Responses;
 using PantryPunk.Api.Repositories;
 
 namespace PantryPunk.Api.Middleware;
@@ -38,32 +39,29 @@ public class ShareCodeAuthMiddleware
         var shareRepository = context.RequestServices.GetRequiredService<ShareRepository>();
         var document = await shareRepository.GetByCodeAsync(code);
 
-        if (document == null || document.RevokedAt.HasValue)
+        // All invalid states return the same response to prevent code enumeration.
+        // Distinct errors (expired vs unconfirmed) would let attackers narrow the search space.
+        if (document == null
+            || document.RevokedAt.HasValue
+            || !document.Confirmed
+            || document.ExpiresAt < DateTime.UtcNow)
         {
             context.Response.StatusCode = 401;
-            await context.Response.WriteAsJsonAsync(new { error = "Invalid share code" });
-            return;
-        }
-
-        if (!document.Confirmed)
-        {
-            if (document.ExpiresAt < DateTime.UtcNow)
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsJsonAsync(new ErrorResponse
             {
-                context.Response.StatusCode = 401;
-                await context.Response.WriteAsJsonAsync(new { error = "Share code has expired" });
-                return;
-            }
-
-            context.Response.StatusCode = 401;
-            await context.Response.WriteAsJsonAsync(new { error = "Share code has not been confirmed" });
+                Error = "Invalid share code",
+                TraceId = context.TraceIdentifier
+            });
             return;
         }
 
-        // Inject synthetic claims principal with owner's userId and recipient name
+        // Inject synthetic claims principal with owner's userId, recipient name, and share code id
         var claims = new[]
         {
             new Claim(ClaimTypes.NameIdentifier, document.OwnerUserId),
-            new Claim("RecipientName", document.RecipientName)
+            new Claim("RecipientName", document.RecipientName!),
+            new Claim("ShareId", document.Id)
         };
 
         var identity = new ClaimsIdentity(claims, "ShareCode");

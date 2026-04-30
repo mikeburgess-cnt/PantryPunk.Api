@@ -55,7 +55,7 @@ All source lives under `PantryPunk.Api/`:
 - **User identity:** Auth0 `sub` claim (e.g. `auth0|abc123`) is the canonical user ID everywhere. Extract via `User.FindFirst(ClaimTypes.NameIdentifier)?.Value`.
 - **addedBy resolution:** Never accepted from client. For JWT users, read from `UserDocument.DisplayName`. For guests, read from `RecipientName` claim injected by `ShareCodeAuthMiddleware`.
 - **Subscriber checks:** `isSubscriber` is NOT in the JWT — it lives in Cosmos DB `UserDocument`. Service layer loads the document and checks, not a policy claim.
-- **Share codes:** 6-char uppercase alphanumeric, partition key is `/code`. Soft-deleted via `revokedAt` (never hard-delete). Expire after 24 hours if unconfirmed; valid indefinitely once confirmed.
+- **Share codes:** 6-char uppercase alphanumeric, partition key is `/code`. Soft-deleted via `revokedAt` (never hard-delete). Expire after 24 hours if unconfirmed; valid indefinitely once confirmed. Recipient name is supplied by the guest when they confirm the code (not by the subscriber at generation time); first-confirm wins for the stored name. Only subscribers can generate or list share codes. Revoke (`DELETE /api/share/:shareId`) accepts either an authenticated subscriber (any code they own) or a share-code guest revoking **their own** code — enforced in `ShareService` via `UserService.RequireSubscriberAsync` and a `ShareId` claim the middleware surfaces. The `RegisteredUser` policy rejects any principal carrying the `RecipientName` claim (the share-code middleware's marker), so share-code guests cannot reach JWT-only endpoints — while leaving the dev `X-Api-Key` / `DevAuthMiddleware` identity untouched. `POST /api/share/confirm-code` returns the full `ShareCodeResponse` (including `shareId`) on 200 so the guest can call `DELETE /api/share/:shareId` to self-revoke; errors use the standard `{ error, traceId }` shape.
 - **Photo upload + recognition:** Single endpoint (`POST /api/shopping-list/items/photo`) uploads blob, calls Claude, creates item — all in one request. Low confidence items are still created (not 422).
 - **Voice flow:** Audio → Azure AI Speech (transcription) → Claude (item extraction) → items created. Single endpoint (`POST /api/shopping-list/items/voice`).
 
@@ -77,7 +77,7 @@ Database name: `PantryPunkDb`
 | Share Code | `X-Share-Code: <code>` | Non-subscriber guests |
 | None | — | `POST /api/share/confirm-code` and `POST /api/webhooks/revenuecat` only |
 
-If both headers present, JWT takes precedence.
+If both headers present, JWT takes precedence. `DELETE /api/share/:shareId` uniquely accepts either mode (guests may only revoke their own code); all other `/api/share/*` endpoints are JWT-only and require `isSubscriber == true`.
 
 ## Error Response Shape
 

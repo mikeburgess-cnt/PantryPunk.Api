@@ -10,11 +10,23 @@ public class ShoppingItemDocument
     [JsonPropertyName("description")]
     public string Description { get; set; } = null!;
 
+    [JsonPropertyName("brand")]
+    public string? Brand { get; set; } = null!;
+
+    [JsonPropertyName("knownAs")]
+    public string? KnownAs { get; set; } = null!;
+
+    [JsonPropertyName("size")]
+    public string? Size { get; set; } = null!;
+
     [JsonPropertyName("quantity")]
     public int? Quantity { get; set; }
 
     [JsonPropertyName("addedBy")]
     public string AddedBy { get; set; } = null!;
+
+    [JsonPropertyName("addedByMethod")]
+    public string AddedByMethod { get; set; } = null!;
 
     [JsonPropertyName("notes")]
     public string? Notes { get; set; }
@@ -34,4 +46,7 @@ public class ShoppingItemDocument
 
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
+
+    [JsonPropertyName("isPurchased")]
+    public bool IsPurchased { get; set; } = false;
 }
