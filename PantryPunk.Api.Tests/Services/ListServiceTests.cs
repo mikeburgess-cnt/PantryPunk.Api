@@ -14,7 +14,7 @@ public class ListServiceTests
 
     public ListServiceTests()
     {
-        _sut = new ListService(_listRepo.Object, _userRepo.Object);
+        _sut = new ListService(_listRepo.Object, _userRepo.Object, null!);
     }
 
     private static ShoppingListDocument CreateList(string userId = "auth0|abc", params ShoppingItemDocument[] items)
@@ -51,13 +51,18 @@ public class ListServiceTests
     }
 
     [Fact]
-    public async Task GetListAsync_ListNotFound_ReturnsNull()
+    public async Task GetListAsync_NoActiveList_CreatesAndReturnsEmptyList()
     {
         _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("missing")).ReturnsAsync((ShoppingListDocument?)null);
+        _listRepo.Setup(r => r.CreateAsync(It.IsAny<ShoppingListDocument>()))
+            .ReturnsAsync((ShoppingListDocument d) => d);
 
         var result = await _sut.GetListAsync("missing");
 
-        Assert.Null(result);
+        Assert.NotNull(result);
+        Assert.Empty(result.Items);
+        _listRepo.Verify(r => r.CreateAsync(It.Is<ShoppingListDocument>(d =>
+            d.OwnerUserId == "missing" && d.Status == ShoppingListStatus.Active)), Times.Once);
     }
 
     [Fact]
@@ -292,7 +297,7 @@ public class ListServiceTests
     {
         _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("missing")).ReturnsAsync((ShoppingListDocument?)null);
 
-        var result = await _sut.CompleteAsync("missing");
+        var result = await _sut.CompleteAsync("missing", null);
 
         Assert.Null(result);
         _listRepo.Verify(r => r.CreateAsync(It.IsAny<ShoppingListDocument>()), Times.Never);
@@ -305,7 +310,7 @@ public class ListServiceTests
         var list = CreateList();
         _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
 
-        await Assert.ThrowsAsync<EmptyListException>(() => _sut.CompleteAsync("auth0|abc"));
+        await Assert.ThrowsAsync<EmptyListException>(() => _sut.CompleteAsync("auth0|abc", null));
         _listRepo.Verify(r => r.CreateAsync(It.IsAny<ShoppingListDocument>()), Times.Never);
         _listRepo.Verify(r => r.ReplaceAsync(It.IsAny<ShoppingListDocument>()), Times.Never);
     }
@@ -325,12 +330,13 @@ public class ListServiceTests
             .Callback<ShoppingListDocument>(d => created = d)
             .ReturnsAsync((ShoppingListDocument d) => d);
 
-        var result = await _sut.CompleteAsync("auth0|abc");
+        var result = await _sut.CompleteAsync("auth0|abc", null);
 
         Assert.NotNull(result);
         Assert.NotNull(created);
         Assert.Equal(created!.ListId, result!.ListId);
-        Assert.NotEqual(oldList.ListId, result.ListId);
+        Assert.Equal(oldList.ListId, result.ListId);
+        Assert.NotEqual(oldList.Id, created.Id);
         Assert.Empty(result.Items);
         Assert.Equal(ShoppingListStatus.Active, created.Status);
         Assert.Equal(ShoppingListStatus.Completed, oldList.Status);

@@ -101,52 +101,6 @@ public class UserServiceTests
     }
 
     [Fact]
-    public async Task UpdateSubscriptionAsync_SetsSubscriberAndTimestamp()
-    {
-        var userId = "auth0|sub";
-        var doc = new UserDocument { Id = userId, UserId = userId, DisplayName = "Mike" };
-        _userRepo.Setup(r => r.GetByIdAsync(userId)).ReturnsAsync(doc);
-        _userRepo.Setup(r => r.UpsertAsync(It.IsAny<UserDocument>()))
-            .ReturnsAsync((UserDocument d) => d);
-
-        var result = await _sut.UpdateSubscriptionAsync(userId, new UpdateSubscriptionRequest { IsSubscriber = true });
-
-        Assert.NotNull(result);
-        Assert.True(result!.IsSubscriber);
-        _userRepo.Verify(r => r.UpsertAsync(It.Is<UserDocument>(d =>
-            d.IsSubscriber && d.SubscribedAt != null)), Times.Once);
-    }
-
-    [Fact]
-    public async Task UpdateSubscriptionAsync_UserNotFound_ReturnsNull()
-    {
-        _userRepo.Setup(r => r.GetByIdAsync("missing")).ReturnsAsync((UserDocument?)null);
-
-        var result = await _sut.UpdateSubscriptionAsync("missing", new UpdateSubscriptionRequest { IsSubscriber = true });
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task UpdateSubscriptionAsync_AlreadySubscribed_DoesNotResetSubscribedAt()
-    {
-        var originalDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        var doc = new UserDocument
-        {
-            Id = "auth0|x", UserId = "auth0|x", DisplayName = "Mike",
-            IsSubscriber = true, SubscribedAt = originalDate
-        };
-        _userRepo.Setup(r => r.GetByIdAsync("auth0|x")).ReturnsAsync(doc);
-        _userRepo.Setup(r => r.UpsertAsync(It.IsAny<UserDocument>()))
-            .ReturnsAsync((UserDocument d) => d);
-
-        await _sut.UpdateSubscriptionAsync("auth0|x", new UpdateSubscriptionRequest { IsSubscriber = true });
-
-        _userRepo.Verify(r => r.UpsertAsync(It.Is<UserDocument>(d =>
-            d.SubscribedAt == originalDate)), Times.Once);
-    }
-
-    [Fact]
     public async Task RequireSubscriberAsync_Subscriber_DoesNotThrow()
     {
         var doc = new UserDocument { Id = "auth0|sub", UserId = "auth0|sub", IsSubscriber = true };
