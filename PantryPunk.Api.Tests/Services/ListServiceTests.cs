@@ -170,6 +170,92 @@ public class ListServiceTests
     }
 
     [Fact]
+    public async Task DeleteItemsAsync_RemovesAllRequestedItems_ReturnsTrue()
+    {
+        var list = CreateList("auth0|abc", CreateItem("item-1"), CreateItem("item-2"), CreateItem("item-3"));
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
+        _listRepo.Setup(r => r.ReplaceAsync(It.IsAny<ShoppingListDocument>()))
+            .ReturnsAsync((ShoppingListDocument d) => d);
+
+        var result = await _sut.DeleteItemsAsync("auth0|abc", new[] { "item-1", "item-3" });
+
+        Assert.True(result);
+        Assert.Single(list.Items);
+        Assert.Equal("item-2", list.Items[0].Id);
+        _listRepo.Verify(r => r.ReplaceAsync(It.IsAny<ShoppingListDocument>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteItemsAsync_UnknownIdsAreSilentlyIgnored_ReturnsTrue()
+    {
+        var list = CreateList("auth0|abc", CreateItem("item-1"), CreateItem("item-2"));
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
+        _listRepo.Setup(r => r.ReplaceAsync(It.IsAny<ShoppingListDocument>()))
+            .ReturnsAsync((ShoppingListDocument d) => d);
+
+        var result = await _sut.DeleteItemsAsync("auth0|abc", new[] { "item-1", "bogus" });
+
+        Assert.True(result);
+        Assert.Single(list.Items);
+        Assert.Equal("item-2", list.Items[0].Id);
+    }
+
+    [Fact]
+    public async Task DeleteItemsAsync_AllUnknownIds_ListUnchanged_ReturnsTrue()
+    {
+        var list = CreateList("auth0|abc", CreateItem("item-1"), CreateItem("item-2"));
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
+        _listRepo.Setup(r => r.ReplaceAsync(It.IsAny<ShoppingListDocument>()))
+            .ReturnsAsync((ShoppingListDocument d) => d);
+
+        var result = await _sut.DeleteItemsAsync("auth0|abc", new[] { "bogus-1", "bogus-2" });
+
+        Assert.True(result);
+        Assert.Equal(2, list.Items.Count);
+        _listRepo.Verify(r => r.ReplaceAsync(It.IsAny<ShoppingListDocument>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteItemsAsync_EmptyRequest_ReturnsTrue()
+    {
+        var list = CreateList("auth0|abc", CreateItem("item-1"));
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
+        _listRepo.Setup(r => r.ReplaceAsync(It.IsAny<ShoppingListDocument>()))
+            .ReturnsAsync((ShoppingListDocument d) => d);
+
+        var result = await _sut.DeleteItemsAsync("auth0|abc", Array.Empty<string>());
+
+        Assert.True(result);
+        Assert.Single(list.Items);
+    }
+
+    [Fact]
+    public async Task DeleteItemsAsync_ListNotFound_ReturnsFalse()
+    {
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("missing")).ReturnsAsync((ShoppingListDocument?)null);
+
+        var result = await _sut.DeleteItemsAsync("missing", new[] { "item-1" });
+
+        Assert.False(result);
+        _listRepo.Verify(r => r.ReplaceAsync(It.IsAny<ShoppingListDocument>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteItemsAsync_DuplicateIdsInRequest_DeduplicatesAndSucceeds()
+    {
+        var list = CreateList("auth0|abc", CreateItem("item-1"), CreateItem("item-2"));
+        _listRepo.Setup(r => r.GetActiveByOwnerUserIdAsync("auth0|abc")).ReturnsAsync(list);
+        _listRepo.Setup(r => r.ReplaceAsync(It.IsAny<ShoppingListDocument>()))
+            .ReturnsAsync((ShoppingListDocument d) => d);
+
+        var result = await _sut.DeleteItemsAsync("auth0|abc", new[] { "item-1", "item-1", "item-1" });
+
+        Assert.True(result);
+        Assert.Single(list.Items);
+        Assert.Equal("item-2", list.Items[0].Id);
+    }
+
+    [Fact]
     public async Task AddItemDirectAsync_AppendsPrebuiltItem()
     {
         var list = CreateList();

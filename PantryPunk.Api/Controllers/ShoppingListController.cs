@@ -139,4 +139,24 @@ public class ShoppingListController : ControllerBase
 
         return NoContent();
     }
+
+    [HttpDelete("items")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> DeleteItems([FromBody] DeleteItemsRequest request)
+    {
+        if (request?.ItemIds is null)
+            return BadRequest(new ErrorResponse { Error = "itemIds is required." });
+
+        await _userService.EnsureExistsAsync(User);
+        var userId = User.GetUserId();
+        var deleted = await _listService.DeleteItemsAsync(userId, request.ItemIds);
+
+        if (!deleted)
+            return NotFound(new ErrorResponse { Error = "Shopping list not found." });
+
+        return NoContent();
+    }
 }

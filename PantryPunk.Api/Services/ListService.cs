@@ -104,6 +104,19 @@ public class ListService
         return true;
     }
 
+    public async Task<bool> DeleteItemsAsync(string userId, IReadOnlyCollection<string> itemIds)
+    {
+        var list = await _listRepository.GetActiveByOwnerUserIdAsync(userId);
+        if (list == null) return false;
+
+        var requested = new HashSet<string>(itemIds, StringComparer.Ordinal);
+        list.Items.RemoveAll(i => requested.Contains(i.Id));
+        list.UpdatedAt = DateTime.UtcNow;
+        await _listRepository.ReplaceAsync(list);
+
+        return true;
+    }
+
     public async Task<ShoppingItemResponse?> AddItemDirectAsync(string userId, ShoppingItemDocument itemDoc)
     {
         var list = await _listRepository.GetActiveByOwnerUserIdAsync(userId);

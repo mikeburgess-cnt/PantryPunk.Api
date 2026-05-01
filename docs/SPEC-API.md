@@ -778,6 +778,34 @@ Deletes an item from the list.
 
 ---
 
+#### `DELETE /api/shopping-list/items`
+
+Deletes multiple items from the list in a single request.
+
+**Auth:** Auth0 JWT or `X-Share-Code` header
+
+**Request:**
+```json
+{
+  "itemIds": ["<id>", "<id>", "..."]
+}
+```
+
+**Behaviour (lenient):**
+1. Read `userId` from the claims principal injected by authentication middleware (JWT or `ShareCodeAuthMiddleware`). This is available as `User.FindFirst(ClaimTypes.NameIdentifier)?.Value` — no container lookup is needed here.
+2. If the request body is missing or `itemIds` is `null`, return `400 Bad Request` with the standard `{ error, traceId }` shape.
+3. Retrieve the active `ShoppingListDocument` from the `ShoppingLists` container using the resolved `userId` as the owner. Return `404 Not Found` if no active list exists.
+4. Build a de-duplicated set of requested IDs (ordinal comparison).
+5. Remove every item from the `items` array whose `id` is in the requested set. IDs not present in the list are silently ignored — the client's view may be stale (a co-shopper deleted an item, the list was completed, etc.) and a partially-stale request is not treated as an error.
+6. An empty `itemIds` array is a no-op (no items removed).
+7. Set `updatedAt` on the `ShoppingListDocument` to `DateTime.UtcNow`.
+8. Write the updated `ShoppingListDocument` back to the `ShoppingLists` container using a replace/upsert operation. The write occurs even when zero items matched, keeping behaviour predictable.
+9. Return `204 No Content`.
+
+**Response `204 No Content`**
+
+---
+
 #### `POST /api/shopping-list/items/photo`
 
 Uploads a photo to Azure Blob Storage, sends it to the Claude API for recognition, adds the recognised item to the shopping list, and returns the created item with a confidence score. This is a single combined operation — the app makes one call and gets back a fully populated shopping list item.
