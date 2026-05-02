@@ -36,7 +36,7 @@ public class ShoppingItemDocument
 
     /// <summary>
     /// Claude's self-assessed confidence: "high", "medium", or "low".
-    /// Null for items added manually or by voice.
+    /// Null for items added manually.
     /// </summary>
     [JsonPropertyName("confidence")]
     public string? Confidence { get; set; }

@@ -17,15 +17,13 @@ public class FeatureFlagServiceTests
     [Fact]
     public async Task GetFlagsAsync_ReturnsAllKnownFlags()
     {
-        _featureManager.Setup(f => f.IsEnabledAsync("TalkIt", It.IsAny<object>())).ReturnsAsync(true);
         _featureManager.Setup(f => f.IsEnabledAsync("RealtimeSync", It.IsAny<object>())).ReturnsAsync(false);
         _featureManager.Setup(f => f.IsEnabledAsync("AnnualSubscription", It.IsAny<object>())).ReturnsAsync(true);
         _featureManager.Setup(f => f.IsEnabledAsync("AppAttest", It.IsAny<object>())).ReturnsAsync(false);
 
         var result = await _sut.GetFlagsAsync("auth0|abc", true);
 
-        Assert.Equal(4, result.Count);
-        Assert.True(result["talkIt"]);
+        Assert.Equal(3, result.Count);
         Assert.False(result["realtimeSync"]);
         Assert.True(result["annualSubscription"]);
         Assert.False(result["appAttest"]);

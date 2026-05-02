@@ -210,36 +210,6 @@
 			]
 		},
 		{
-			"name": "Voice",
-			"description": "VoiceController — api/list/items. [Authorize]. Rate-limited via the \"ai\" policy.",
-			"item": [
-				{
-					"name": "UploadVoice",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "formdata",
-							"formdata": [
-								{
-									"key": "audio",
-									"type": "file",
-									"src": "",
-									"description": "m4a/mp4 audio recording (max 2MB)."
-								}
-							]
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/list/items/voice",
-							"host": ["{{baseUrl}}"],
-							"path": ["api", "list", "items", "voice"]
-						},
-						"description": "Transcribes audio via Azure AI Speech, extracts items via Claude, and adds them to the list."
-					}
-				}
-			]
-		},
-		{
 			"name": "Share",
 			"description": "ShareController — api/share. Per-action auth (RegisteredUser or AllowAnonymous).",
 			"item": [

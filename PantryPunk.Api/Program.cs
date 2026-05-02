@@ -105,7 +105,6 @@ builder.Services.AddBlobStorage(builder.Configuration);
 
 // HTTP clients for external APIs
 builder.Services.AddHttpClient("Claude");
-builder.Services.AddHttpClient("AzureSpeech");
 
 // Application services
 builder.Services.AddRepositories();
@@ -134,7 +133,7 @@ builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = 429;
 
-    // Per-user AI limiter (image and voice endpoints)
+    // Per-user AI limiter (image endpoint)
     options.AddPolicy("ai", context =>
     {
         var userId = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "anonymous";
@@ -168,9 +167,7 @@ builder.Services.AddRateLimiter(options =>
     });
 });
 
-// Kestrel max request body size: 3MB payload + ~64KB multipart overhead.
-// Sized for the image upload limit (audio validator enforces its own 2MB cap)
-// so the validator can return a 400 rather than Kestrel returning 413 first.
+// Kestrel max request body size: 3MB payload + ~64KB multipart overhead, sized for the image upload limit.
 builder.WebHost.ConfigureKestrel(options =>
     options.Limits.MaxRequestBodySize = 3 * 1024 * 1024 + 64 * 1024);
 var app = builder.Build();

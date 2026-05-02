@@ -14,8 +14,6 @@ Argument: `$ARGUMENTS`
 |---|---|
 | `Claude--ApiKey` | `Claude:ApiKey` |
 | `RevenueCat--WebhookSecret` | `RevenueCat:WebhookSecret` |
-| `AzureSpeech--Key` | `AzureSpeech:Key` |
-| `AzureSpeech--Region` | `AzureSpeech:Region` |
 
 The `--` (double hyphen) is intentional — Key Vault forbids `:`, and the configuration provider rewrites `--` to `:`.
 

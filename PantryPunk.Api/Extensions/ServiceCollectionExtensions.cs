@@ -83,7 +83,6 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<BlobSasTokenService>();
         services.AddSingleton<ImageFileValidator>();
         services.AddScoped<ImageRecognitionService>();
-        services.AddScoped<VoiceRecognitionService>();
         services.AddScoped<FeatureFlagService>();
         return services;
     }

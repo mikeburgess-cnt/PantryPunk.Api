@@ -62,7 +62,6 @@ To force a re-seed after manually deleting the doc, bump the `forceUpdateTag` in
 
 ## Notes
 
-- **Voice endpoint deferred:** Azure AI Speech (Cognitive Services) is not provisioned here. The `/api/shopping-list/items/voice` endpoint will fail until Speech is added and `AzureSpeech:Key` is seeded in Key Vault.
 - **Custom domain:** `api.pantrypunk.ai` requires DNS verification post-deploy via `az webapp config hostname add`.
-- **Feature flags:** All four flags (`TalkIt`, `RealtimeSync`, `AnnualSubscription`, `AppAttest`) are seeded disabled in `infra/seed/app-config.json`. Enable them by editing the `app-config` Cosmos document — set `FeatureManagement:<Flag>:EnabledFor:0:Parameters:Audience:DefaultRolloutPercentage` to `100`, or change the `subscribers` group rollout to target paid users.
+- **Feature flags:** All three flags (`RealtimeSync`, `AnnualSubscription`, `AppAttest`) are seeded disabled in `infra/seed/app-config.json`. Enable them by editing the `app-config` Cosmos document — set `FeatureManagement:<Flag>:EnabledFor:0:Parameters:Audience:DefaultRolloutPercentage` to `100`, or change the `subscribers` group rollout to target paid users.
 - **Cosmos data-plane RBAC:** Provisioned in `cosmos.bicep` via `sqlRoleAssignments` (not ARM RBAC). If the role assignment is missing, the app will log 403 errors from `DefaultAzureCredential`.

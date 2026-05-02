@@ -3,16 +3,10 @@
   "settings": {
     "PantryPunk:Claude:Model": "claude-sonnet-4-6",
     "PantryPunk:Claude:MaxTokensImage": "256",
-    "PantryPunk:Claude:MaxTokensVoice": "512",
     "PantryPunk:ShareCode:ExpiryHours": "24",
     "PantryPunk:RateLimit:AiRequestsPerMinute": "30",
     "PantryPunk:RateLimit:ShareConfirmPerHour": "10",
     "PantryPunk:RateLimit:PerIpPerMinute": "120",
-
-    "FeatureManagement:TalkIt:EnabledFor:0:Name": "Microsoft.Targeting",
-    "FeatureManagement:TalkIt:EnabledFor:0:Parameters:Audience:DefaultRolloutPercentage": "0",
-    "FeatureManagement:TalkIt:EnabledFor:0:Parameters:Audience:Groups:0:Name": "subscribers",
-    "FeatureManagement:TalkIt:EnabledFor:0:Parameters:Audience:Groups:0:RolloutPercentage": "0",
 
     "FeatureManagement:RealtimeSync:EnabledFor:0:Name": "Microsoft.Targeting",
     "FeatureManagement:RealtimeSync:EnabledFor:0:Parameters:Audience:DefaultRolloutPercentage": "0",

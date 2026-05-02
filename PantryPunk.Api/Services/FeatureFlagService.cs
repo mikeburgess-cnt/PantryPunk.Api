@@ -7,7 +7,7 @@ public class FeatureFlagService
 {
     private readonly IFeatureManager _featureManager;
 
-    private static readonly string[] KnownFlags = ["TalkIt", "RealtimeSync", "AnnualSubscription", "AppAttest"];
+    private static readonly string[] KnownFlags = ["RealtimeSync", "AnnualSubscription", "AppAttest"];
 
     public FeatureFlagService(IFeatureManager featureManager)
     {

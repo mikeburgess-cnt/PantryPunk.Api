@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "13178523929253771264"
+      "templateHash": "3509674927871259721"
     }
   },
   "parameters": {
@@ -1014,7 +1014,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "4898254351104927550"
+              "templateHash": "8450187159457247881"
             }
           },
           "parameters": {
@@ -1040,7 +1040,7 @@
             }
           },
           "variables": {
-            "seedDocument": "{\n  \"id\": \"app-config\",\n  \"settings\": {\n    \"PantryPunk:Claude:Model\": \"claude-sonnet-4-6\",\n    \"PantryPunk:Claude:MaxTokensImage\": \"256\",\n    \"PantryPunk:Claude:MaxTokensVoice\": \"512\",\n    \"PantryPunk:ShareCode:ExpiryHours\": \"24\",\n    \"PantryPunk:RateLimit:AiRequestsPerMinute\": \"30\",\n    \"PantryPunk:RateLimit:ShareConfirmPerHour\": \"10\",\n    \"PantryPunk:RateLimit:PerIpPerMinute\": \"120\",\n\n    \"FeatureManagement:TalkIt:EnabledFor:0:Name\": \"Microsoft.Targeting\",\n    \"FeatureManagement:TalkIt:EnabledFor:0:Parameters:Audience:DefaultRolloutPercentage\": \"0\",\n    \"FeatureManagement:TalkIt:EnabledFor:0:Parameters:Audience:Groups:0:Name\": \"subscribers\",\n    \"FeatureManagement:TalkIt:EnabledFor:0:Parameters:Audience:Groups:0:RolloutPercentage\": \"0\",\n\n    \"FeatureManagement:RealtimeSync:EnabledFor:0:Name\": \"Microsoft.Targeting\",\n    \"FeatureManagement:RealtimeSync:EnabledFor:0:Parameters:Audience:DefaultRolloutPercentage\": \"0\",\n    \"FeatureManagement:RealtimeSync:EnabledFor:0:Parameters:Audience:Groups:0:Name\": \"subscribers\",\n    \"FeatureManagement:RealtimeSync:EnabledFor:0:Parameters:Audience:Groups:0:RolloutPercentage\": \"0\",\n\n    \"FeatureManagement:AnnualSubscription:EnabledFor:0:Name\": \"Microsoft.Targeting\",\n    \"FeatureManagement:AnnualSubscription:EnabledFor:0:Parameters:Audience:DefaultRolloutPercentage\": \"0\",\n    \"FeatureManagement:AnnualSubscription:EnabledFor:0:Parameters:Audience:Groups:0:Name\": \"subscribers\",\n    \"FeatureManagement:AnnualSubscription:EnabledFor:0:Parameters:Audience:Groups:0:RolloutPercentage\": \"0\",\n\n    \"FeatureManagement:AppAttest:EnabledFor:0:Name\": \"Microsoft.Targeting\",\n    \"FeatureManagement:AppAttest:EnabledFor:0:Parameters:Audience:DefaultRolloutPercentage\": \"0\",\n    \"FeatureManagement:AppAttest:EnabledFor:0:Parameters:Audience:Groups:0:Name\": \"subscribers\",\n    \"FeatureManagement:AppAttest:EnabledFor:0:Parameters:Audience:Groups:0:RolloutPercentage\": \"0\"\n  }\n}\n"
+            "seedDocument": "{\n  \"id\": \"app-config\",\n  \"settings\": {\n    \"PantryPunk:Claude:Model\": \"claude-sonnet-4-6\",\n    \"PantryPunk:Claude:MaxTokensImage\": \"256\",\n    \"PantryPunk:ShareCode:ExpiryHours\": \"24\",\n    \"PantryPunk:RateLimit:AiRequestsPerMinute\": \"30\",\n    \"PantryPunk:RateLimit:ShareConfirmPerHour\": \"10\",\n    \"PantryPunk:RateLimit:PerIpPerMinute\": \"120\",\n\n    \"FeatureManagement:RealtimeSync:EnabledFor:0:Name\": \"Microsoft.Targeting\",\n    \"FeatureManagement:RealtimeSync:EnabledFor:0:Parameters:Audience:DefaultRolloutPercentage\": \"0\",\n    \"FeatureManagement:RealtimeSync:EnabledFor:0:Parameters:Audience:Groups:0:Name\": \"subscribers\",\n    \"FeatureManagement:RealtimeSync:EnabledFor:0:Parameters:Audience:Groups:0:RolloutPercentage\": \"0\",\n\n    \"FeatureManagement:AnnualSubscription:EnabledFor:0:Name\": \"Microsoft.Targeting\",\n    \"FeatureManagement:AnnualSubscription:EnabledFor:0:Parameters:Audience:DefaultRolloutPercentage\": \"0\",\n    \"FeatureManagement:AnnualSubscription:EnabledFor:0:Parameters:Audience:Groups:0:Name\": \"subscribers\",\n    \"FeatureManagement:AnnualSubscription:EnabledFor:0:Parameters:Audience:Groups:0:RolloutPercentage\": \"0\",\n\n    \"FeatureManagement:AppAttest:EnabledFor:0:Name\": \"Microsoft.Targeting\",\n    \"FeatureManagement:AppAttest:EnabledFor:0:Parameters:Audience:DefaultRolloutPercentage\": \"0\",\n    \"FeatureManagement:AppAttest:EnabledFor:0:Parameters:Audience:Groups:0:Name\": \"subscribers\",\n    \"FeatureManagement:AppAttest:EnabledFor:0:Parameters:Audience:Groups:0:RolloutPercentage\": \"0\"\n  }\n}\n"
           },
           "resources": [
             {
