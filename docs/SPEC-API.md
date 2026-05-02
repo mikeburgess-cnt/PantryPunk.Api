@@ -982,6 +982,54 @@ Only confirmed codes are returned, so `confirmed` is always `true` and `recipien
 
 ---
 
+#### `PATCH /api/share/:shareId`
+
+Lets the subscriber who owns the share code rename the recipient. Only the list owner may rename a guest — share-code guests are rejected by the `RegisteredUser` policy. Useful when the guest typed an unrecognisable name at confirmation time, or when the owner wants a consistent label in the household roster shown by `GET /api/share`.
+
+**Auth:** Auth0 JWT + `isSubscriber`
+
+**Request:**
+```json
+{
+  "recipientName": "Natalie"
+}
+```
+
+`recipientName` is required, 1–64 characters after trimming.
+
+**Behaviour:**
+1. Extract `userId` from the Auth0 JWT `sub` claim. Share-code guests are rejected by the `RegisteredUser` policy and never reach this handler.
+2. Load the caller's `UserDocument` and return `403 Forbidden` with `{ "error": "Sharing requires an active subscription." }` if `isSubscriber` is false.
+3. Look up the share code with the same scoped query used by `DELETE /api/share/:shareId`: `SELECT * FROM c WHERE c.id = @shareId AND c.ownerUserId = @userId`.
+4. Return `404 Not Found` with `{ "error": "Share code not found." }` if no document is returned. This covers both "shareId does not exist" and "shareId exists but is owned by a different subscriber" — we deliberately return 404 (not 403) so we do not leak the existence of share codes owned by other subscribers.
+5. Return `409 Conflict` with `{ "error": "Share code has not been confirmed by the recipient yet." }` if `confirmed == false`. The recipient name only exists once the guest has joined; until then there is nothing to rename.
+6. Trim the supplied `recipientName`. If it equals the stored `recipientName` (ordinal comparison), return `200 OK` with the existing `ShareCodeResponse` and **do not** write to Cosmos. Mirrors the idempotent re-confirm behaviour in `POST /api/share/confirm-code`.
+7. Otherwise overwrite `recipientName` with the trimmed value and write the updated `ShareCodeDocument` back to the container. `confirmedAt`, `createdAt`, `expiresAt`, `confirmed`, and `revokedAt` are not changed.
+8. Return `200 OK` with the full `ShareCodeResponse` (same shape as `GET /api/share` items).
+
+**Response `200 OK`:**
+```json
+{
+  "shareId": "sharecode-uuid",
+  "recipientName": "Natalie",
+  "code": "6Y812C",
+  "confirmed": true,
+  "confirmedAt": "2026-04-11T10:05:00Z",
+  "expiresAt": "2026-04-12T08:00:00Z",
+  "createdAt": "2026-04-11T08:00:00Z"
+}
+```
+
+**Response `409 Conflict`:**
+```json
+{
+  "error": "Share code has not been confirmed by the recipient yet.",
+  "traceId": "..."
+}
+```
+
+---
+
 #### `DELETE /api/share/:shareId`
 
 Revokes a share code. The associated guest loses list access on their next API call. Accepts two caller modes:

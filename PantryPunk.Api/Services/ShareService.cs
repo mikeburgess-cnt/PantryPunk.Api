@@ -109,6 +109,28 @@ public class ShareService
         return documents.Where(d => d.Confirmed).Select(MapToListResponse).ToList();
     }
 
+    public async Task<(ShareCodeResponse? response, string? error, int? statusCode)> UpdateRecipientNameAsync(
+        string shareId, string userId, UpdateShareCodeRecipientNameRequest request)
+    {
+        await _userService.RequireSubscriberAsync(userId);
+
+        var document = await _shareRepository.GetByIdAndOwnerAsync(shareId, userId);
+        if (document == null)
+            return (null, "Share code not found.", 404);
+
+        if (!document.Confirmed)
+            return (null, "Share code has not been confirmed by the recipient yet.", 409);
+
+        var newName = request.RecipientName.Trim();
+        if (!string.Equals(document.RecipientName, newName, StringComparison.Ordinal))
+        {
+            document.RecipientName = newName;
+            await _shareRepository.ReplaceAsync(document);
+        }
+
+        return (MapToListResponse(document), null, null);
+    }
+
     public async Task<bool> RevokeAsync(string shareId, string userId, bool isShareCodeUser, string? authenticatedShareId)
     {
         if (isShareCodeUser)

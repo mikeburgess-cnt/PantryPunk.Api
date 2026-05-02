@@ -80,6 +80,34 @@ public class ShareController : ControllerBase
         }
     }
 
+    [HttpPatch("{shareId}")]
+    [Authorize(Policy = "RegisteredUser")]
+    [ProducesResponseType<ShareCodeResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> UpdateRecipientName(
+        string shareId, [FromBody] UpdateShareCodeRecipientNameRequest request)
+    {
+        try
+        {
+            var userId = User.GetUserId();
+            var (response, error, statusCode) =
+                await _shareService.UpdateRecipientNameAsync(shareId, userId, request);
+
+            if (response == null)
+                return StatusCode(statusCode!.Value, new ErrorResponse { Error = error! });
+
+            return Ok(response);
+        }
+        catch (ForbiddenException ex)
+        {
+            return StatusCode(403, new ErrorResponse { Error = ex.Message });
+        }
+    }
+
     [HttpDelete("{shareId}")]
     [Authorize]
     [ProducesResponseType(StatusCodes.Status204NoContent)]

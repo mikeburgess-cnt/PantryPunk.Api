@@ -231,6 +231,129 @@ public class ShareServiceTests
     }
 
     [Fact]
+    public async Task UpdateRecipientNameAsync_SubscriberOwner_DifferentName_UpdatesAndWrites()
+    {
+        _userService.Setup(s => s.RequireSubscriberAsync("auth0|owner")).Returns(Task.CompletedTask);
+        var doc = new ShareCodeDocument
+        {
+            Id = "sc-1", Code = "ABC123", OwnerUserId = "auth0|owner", ListId = "list-1",
+            RecipientName = "Natalie", Confirmed = true, ConfirmedAt = DateTime.UtcNow.AddHours(-1),
+            ExpiresAt = DateTime.UtcNow.AddHours(23), CreatedAt = DateTime.UtcNow.AddHours(-2)
+        };
+        _shareRepo.Setup(r => r.GetByIdAndOwnerAsync("sc-1", "auth0|owner")).ReturnsAsync(doc);
+        _shareRepo.Setup(r => r.ReplaceAsync(It.IsAny<ShareCodeDocument>()))
+            .ReturnsAsync((ShareCodeDocument d) => d);
+
+        var (response, error, statusCode) = await _sut.UpdateRecipientNameAsync(
+            "sc-1", "auth0|owner",
+            new UpdateShareCodeRecipientNameRequest { RecipientName = "Nat" });
+
+        Assert.NotNull(response);
+        Assert.Equal("Nat", response!.RecipientName);
+        Assert.Equal("sc-1", response.ShareId);
+        Assert.Null(error);
+        Assert.Null(statusCode);
+        Assert.Equal("Nat", doc.RecipientName);
+        _shareRepo.Verify(r => r.ReplaceAsync(It.Is<ShareCodeDocument>(d => d.RecipientName == "Nat")), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateRecipientNameAsync_SameNameAfterTrim_DoesNotWrite()
+    {
+        _userService.Setup(s => s.RequireSubscriberAsync("auth0|owner")).Returns(Task.CompletedTask);
+        var doc = new ShareCodeDocument
+        {
+            Id = "sc-1", Code = "ABC123", OwnerUserId = "auth0|owner", ListId = "list-1",
+            RecipientName = "Natalie", Confirmed = true, ConfirmedAt = DateTime.UtcNow.AddHours(-1),
+            ExpiresAt = DateTime.UtcNow.AddHours(23), CreatedAt = DateTime.UtcNow.AddHours(-2)
+        };
+        _shareRepo.Setup(r => r.GetByIdAndOwnerAsync("sc-1", "auth0|owner")).ReturnsAsync(doc);
+
+        var (response, error, statusCode) = await _sut.UpdateRecipientNameAsync(
+            "sc-1", "auth0|owner",
+            new UpdateShareCodeRecipientNameRequest { RecipientName = "  Natalie  " });
+
+        Assert.NotNull(response);
+        Assert.Equal("Natalie", response!.RecipientName);
+        Assert.Equal("Natalie", doc.RecipientName);
+        Assert.Null(error);
+        Assert.Null(statusCode);
+        _shareRepo.Verify(r => r.ReplaceAsync(It.IsAny<ShareCodeDocument>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateRecipientNameAsync_NotSubscriber_ThrowsForbidden()
+    {
+        _userService.Setup(s => s.RequireSubscriberAsync("auth0|free"))
+            .ThrowsAsync(new ForbiddenException("Sharing requires an active subscription."));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.UpdateRecipientNameAsync("sc-1", "auth0|free",
+                new UpdateShareCodeRecipientNameRequest { RecipientName = "Alice" }));
+
+        _shareRepo.Verify(r => r.GetByIdAndOwnerAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        _shareRepo.Verify(r => r.ReplaceAsync(It.IsAny<ShareCodeDocument>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateRecipientNameAsync_SubscriberDoesNotOwnShareCode_ReturnsNotFound()
+    {
+        // Caller is a valid subscriber but the shareId belongs to a different owner.
+        // GetByIdAndOwnerAsync filters on (id AND ownerUserId), so the repo returns null —
+        // we deliberately return 404 (not 403) to avoid leaking the existence of other subscribers' codes.
+        _userService.Setup(s => s.RequireSubscriberAsync("auth0|attacker")).Returns(Task.CompletedTask);
+        _shareRepo.Setup(r => r.GetByIdAndOwnerAsync("sc-victim", "auth0|attacker"))
+            .ReturnsAsync((ShareCodeDocument?)null);
+
+        var (response, error, statusCode) = await _sut.UpdateRecipientNameAsync(
+            "sc-victim", "auth0|attacker",
+            new UpdateShareCodeRecipientNameRequest { RecipientName = "Hacked" });
+
+        Assert.Null(response);
+        Assert.Equal(404, statusCode);
+        Assert.Equal("Share code not found.", error);
+        _shareRepo.Verify(r => r.ReplaceAsync(It.IsAny<ShareCodeDocument>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateRecipientNameAsync_ShareIdNotFound_ReturnsNotFound()
+    {
+        _userService.Setup(s => s.RequireSubscriberAsync("auth0|owner")).Returns(Task.CompletedTask);
+        _shareRepo.Setup(r => r.GetByIdAndOwnerAsync("missing", "auth0|owner"))
+            .ReturnsAsync((ShareCodeDocument?)null);
+
+        var (response, error, statusCode) = await _sut.UpdateRecipientNameAsync(
+            "missing", "auth0|owner",
+            new UpdateShareCodeRecipientNameRequest { RecipientName = "Natalie" });
+
+        Assert.Null(response);
+        Assert.Equal(404, statusCode);
+        Assert.Equal("Share code not found.", error);
+    }
+
+    [Fact]
+    public async Task UpdateRecipientNameAsync_Unconfirmed_ReturnsConflict()
+    {
+        _userService.Setup(s => s.RequireSubscriberAsync("auth0|owner")).Returns(Task.CompletedTask);
+        var doc = new ShareCodeDocument
+        {
+            Id = "sc-1", Code = "ABC123", OwnerUserId = "auth0|owner", ListId = "list-1",
+            RecipientName = null, Confirmed = false,
+            ExpiresAt = DateTime.UtcNow.AddHours(23), CreatedAt = DateTime.UtcNow.AddHours(-1)
+        };
+        _shareRepo.Setup(r => r.GetByIdAndOwnerAsync("sc-1", "auth0|owner")).ReturnsAsync(doc);
+
+        var (response, error, statusCode) = await _sut.UpdateRecipientNameAsync(
+            "sc-1", "auth0|owner",
+            new UpdateShareCodeRecipientNameRequest { RecipientName = "Natalie" });
+
+        Assert.Null(response);
+        Assert.Equal(409, statusCode);
+        Assert.Equal("Share code has not been confirmed by the recipient yet.", error);
+        _shareRepo.Verify(r => r.ReplaceAsync(It.IsAny<ShareCodeDocument>()), Times.Never);
+    }
+
+    [Fact]
     public async Task RevokeAsync_SubscriberOwner_SetsRevokedAt()
     {
         _userService.Setup(s => s.RequireSubscriberAsync("auth0|owner")).Returns(Task.CompletedTask);
