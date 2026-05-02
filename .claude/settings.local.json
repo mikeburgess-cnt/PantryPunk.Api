@@ -21,7 +21,9 @@
       "Bash(grep -A 30 \"#### \\\\`POST /api/share/generate-code\\\\`\" /c/Users/mikeb_8ijjq2q/source/repos/PantryPunk/PantryPunk.Api/docs/spec-api.md)",
       "Bash(grep *)",
       "Bash(az deployment *)",
-      "Bash(az webapp *)"
+      "Bash(az webapp *)",
+      "Bash(curl -i -s -o /tmp/health.txt -w \"HTTP %{http_code}\\\\n\" https://api.pantrypunk.ai/health)",
+      "Read(//tmp/**)"
     ]
   }
 }

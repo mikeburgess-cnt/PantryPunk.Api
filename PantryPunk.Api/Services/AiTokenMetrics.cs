@@ -27,5 +27,22 @@ public class AiTokenMetrics
         if (output > 0) metric.TrackValue(output, "output", model);
         if (cacheCreation > 0) metric.TrackValue(cacheCreation, "cache_creation", model);
         if (cacheRead > 0) metric.TrackValue(cacheRead, "cache_read", model);
+
+        var provider = metricName == AnthropicMetricName ? "anthropic" : "openai";
+        _telemetry.TrackEvent(
+            "AiImageRecognition",
+            properties: new Dictionary<string, string>
+            {
+                ["provider"] = provider,
+                ["model"] = model,
+            },
+            metrics: new Dictionary<string, double>
+            {
+                ["inputTokens"] = input,
+                ["outputTokens"] = output,
+                ["cacheCreationTokens"] = cacheCreation,
+                ["cacheReadTokens"] = cacheRead,
+                ["totalTokens"] = input + output + cacheCreation + cacheRead,
+            });
     }
 }
