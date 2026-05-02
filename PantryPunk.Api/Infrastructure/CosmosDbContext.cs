@@ -7,6 +7,7 @@ public class CosmosDbContext
     public Container Users { get; }
     public Container ShoppingLists { get; }
     public Container ShareCodes { get; }
+    public Container AppConfig { get; }
 
     public CosmosDbContext(CosmosClient cosmosClient, IConfiguration configuration)
     {
@@ -17,5 +18,6 @@ public class CosmosDbContext
         Users = database.GetContainer("Users");
         ShoppingLists = database.GetContainer("ShoppingLists");
         ShareCodes = database.GetContainer("ShareCodes");
+        AppConfig = database.GetContainer("AppConfig");
     }
 }

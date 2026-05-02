@@ -2,7 +2,13 @@ param location string
 param planName string
 param siteName string
 param sku string
-param appConfigEndpoint string
+param cosmosEndpoint string
+param cosmosDatabaseName string
+param storageAccountName string
+param photosContainer string
+param auth0Domain string
+param auth0Audience string
+param keyVaultUri string
 param appInsightsConnectionString string
 param logAnalyticsWorkspaceId string
 param customHostname string = ''
@@ -36,7 +42,13 @@ resource site 'Microsoft.Web/sites@2023-12-01' = {
       healthCheckPath: '/health'
       appSettings: [
         { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
-        { name: 'AzureAppConfiguration__Endpoint', value: appConfigEndpoint }
+        { name: 'CosmosDb__AccountEndpoint', value: cosmosEndpoint }
+        { name: 'CosmosDb__DatabaseName', value: cosmosDatabaseName }
+        { name: 'BlobStorage__AccountName', value: storageAccountName }
+        { name: 'BlobStorage__PhotosContainer', value: photosContainer }
+        { name: 'Auth0__Domain', value: auth0Domain }
+        { name: 'Auth0__Audience', value: auth0Audience }
+        { name: 'KeyVault__Uri', value: keyVaultUri }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
         { name: 'ApplicationInsightsAgent_EXTENSION_VERSION', value: '~3' }
         { name: 'WEBSITE_RUN_FROM_PACKAGE', value: '1' }

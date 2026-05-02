@@ -14,14 +14,18 @@ var resourceGroupName = '${prefix}-rg-${env}'
 var logName = '${prefix}-log-${env}'
 var appInsightsName = '${prefix}-appi-${env}'
 var keyVaultName = '${prefix}-kv-${env}-${take(uniqueString(subscription().subscriptionId), 6)}'
-var appConfigName = '${prefix}-appcs-${env}'
 var cosmosName = '${prefix}-cosmos-${env}'
+var cosmosDatabaseName = 'PantryPunkDb'
+var photosContainer = 'photos'
 var storageAccountName = '${prefix}st${env}'
 var appPlanName = '${prefix}-plan-${env}'
 var appSiteName = '${prefix}-app-${env}'
-var appConfigEndpoint = 'https://${appConfigName}.azconfig.io'
+var cosmosEndpoint = 'https://${cosmosName}.documents.azure.com:443/'
+var keyVaultUri = 'https://${keyVaultName}${environment().suffixes.keyvaultDns}'
 var seedUamiName = '${prefix}-seed-uami-${env}'
 var seedScriptName = '${prefix}-seed-admin-${env}'
+var seedAppConfigUamiName = '${prefix}-seed-appcfg-uami-${env}'
+var seedAppConfigScriptName = '${prefix}-seed-appcfg-${env}'
 
 resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   name: resourceGroupName
@@ -56,7 +60,13 @@ module appService 'modules/appService.bicep' = {
     planName: appPlanName
     siteName: appSiteName
     sku: appServicePlanSku
-    appConfigEndpoint: appConfigEndpoint
+    cosmosEndpoint: cosmosEndpoint
+    cosmosDatabaseName: cosmosDatabaseName
+    storageAccountName: storageAccountName
+    photosContainer: photosContainer
+    auth0Domain: auth0Domain
+    auth0Audience: auth0Audience
+    keyVaultUri: keyVaultUri
     appInsightsConnectionString: appInsights.outputs.connectionString
     logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
     customHostname: apiCustomHostname
@@ -80,7 +90,7 @@ module cosmos 'modules/cosmos.bicep' = {
   params: {
     location: location
     accountName: cosmosName
-    databaseName: 'PantryPunkDb'
+    databaseName: cosmosDatabaseName
     appServicePrincipalId: appService.outputs.principalId
     logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
   }
@@ -100,13 +110,28 @@ module seedAdmin 'modules/seedAdminUser.bicep' = {
   ]
 }
 
+module seedAppConfig 'modules/seedAppConfig.bicep' = {
+  name: 'seedAppConfig'
+  scope: rg
+  params: {
+    location: location
+    cosmosAccountName: cosmosName
+    databaseName: cosmosDatabaseName
+    uamiName: seedAppConfigUamiName
+    scriptName: seedAppConfigScriptName
+  }
+  dependsOn: [
+    cosmos
+  ]
+}
+
 module storage 'modules/storage.bicep' = {
   name: 'storage'
   scope: rg
   params: {
     location: location
     accountName: storageAccountName
-    containerName: 'photos'
+    containerName: photosContainer
     appServicePrincipalId: appService.outputs.principalId
     logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
   }
@@ -123,25 +148,8 @@ module customDomain 'modules/customDomain.bicep' = if (!empty(apiCustomHostname)
   }
 }
 
-module appConfig 'modules/appConfig.bicep' = {
-  name: 'appConfig'
-  scope: rg
-  params: {
-    location: location
-    name: appConfigName
-    appServicePrincipalId: appService.outputs.principalId
-    cosmosEndpoint: cosmos.outputs.endpoint
-    storageAccountName: storageAccountName
-    keyVaultName: keyVaultName
-    auth0Domain: auth0Domain
-    auth0Audience: auth0Audience
-    logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
-  }
-}
-
 output resourceGroupName string = rg.name
 output appServiceHostname string = appService.outputs.defaultHostname
 output customDomainVerificationId string = appService.outputs.customDomainVerificationId
-output appConfigEndpoint string = appConfig.outputs.endpoint
 output keyVaultName string = keyVault.outputs.keyVaultName
 output cosmosEndpoint string = cosmos.outputs.endpoint

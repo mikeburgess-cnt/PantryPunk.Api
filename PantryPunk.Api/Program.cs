@@ -1,6 +1,7 @@
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.FeatureManagement;
 using Microsoft.IdentityModel.Tokens;
 using PantryPunk.Api.Extensions;
 using PantryPunk.Api.Infrastructure;
@@ -9,8 +10,15 @@ using PantryPunk.Api.Models.Responses;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Azure App Configuration + Feature Management
-builder.AddAppConfiguration();
+// Secrets from Key Vault (no-op locally if KeyVault:Uri is unset)
+builder.AddKeyVaultSecrets();
+
+// Per-request configuration overlay populated by AppConfigMiddleware from Cosmos.
+// Sits last in the IConfigurationRoot chain so its values override appsettings/env vars.
+((IConfigurationBuilder)builder.Configuration).Add(new AmbientConfigurationProvider());
+
+builder.Services.AddMemoryCache();
+builder.Services.AddFeatureManagement();
 
 // Auth0 JWT Authentication
 var auth0Domain = builder.Configuration["Auth0:Domain"];
@@ -210,11 +218,8 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
-// Azure App Configuration refresh (must be before UseRouting)
-if (!string.IsNullOrEmpty(builder.Configuration["AzureAppConfiguration:Endpoint"]))
-{
-    app.UseAzureAppConfiguration();
-}
+// Per-request AppConfig overlay must run before anything that reads IConfiguration overlay values.
+app.UseMiddleware<AppConfigMiddleware>();
 
 // Trust the single XFF hop from the Azure App Service front-end proxy.
 // KnownNetworks/KnownProxies are cleared so only the platform's XFF hop is unwrapped —

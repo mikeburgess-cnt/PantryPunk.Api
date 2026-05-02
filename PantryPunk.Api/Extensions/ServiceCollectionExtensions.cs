@@ -70,6 +70,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<UserRepository>();
         services.AddScoped<ListRepository>();
         services.AddScoped<ShareRepository>();
+        services.AddScoped<AppConfigRepository>();
         return services;
     }
 

@@ -16,7 +16,7 @@ resource kv 'Microsoft.KeyVault/vaults@2023-07-01' = {
   }
 }
 
-// Key Vault Secrets User — allows App Service MI to read secrets (used by App Config KV refs)
+// Key Vault Secrets User — allows App Service MI to read secrets at startup via the configuration provider
 resource secretsUserAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(kv.id, appServicePrincipalId, 'kv-secrets-user')
   scope: kv

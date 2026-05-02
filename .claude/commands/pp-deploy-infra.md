@@ -3,7 +3,7 @@ description: Deploy PantryPunk Azure infrastructure via Bicep (subscription-scop
 allowed-tools: Bash, Read
 ---
 
-Deploy the PantryPunk Azure infrastructure defined in `infra/main.bicep` with `infra/main.bicepparam`. This is a subscription-scoped deployment that creates/updates the `pp-rg-prod` resource group and every resource inside it (App Service, Cosmos, Key Vault, App Configuration, Storage, App Insights, Log Analytics).
+Deploy the PantryPunk Azure infrastructure defined in `infra/main.bicep` with `infra/main.bicepparam`. This is a subscription-scoped deployment that creates/updates the `pp-rg-prod` resource group and every resource inside it (App Service, Cosmos, Key Vault, Storage, App Insights, Log Analytics).
 
 ## Preflight
 
@@ -36,8 +36,8 @@ az deployment sub create \
 
 ## Post-deploy
 
-- Capture the outputs (`resourceGroupName`, `appServiceHostname`, `keyVaultName`, `cosmosEndpoint`, `appConfigEndpoint`, `customDomainVerificationId`) from the deployment result and report them.
-- If this is the first deploy, remind the user to run `/pp-deploy-secrets` next to seed Key Vault, and `/pp-deploy-app` to ship the application code.
+- Capture the outputs (`resourceGroupName`, `appServiceHostname`, `keyVaultName`, `cosmosEndpoint`, `customDomainVerificationId`) from the deployment result and report them.
+- If this is the first deploy, remind the user to run `/pp-deploy-secrets` next to seed Key Vault, then `/pp-deploy-app` to ship the application code. The `app-config` Cosmos document is auto-seeded by the `seedAppConfig` module on first deploy (create-if-not-exists from `infra/seed/app-config.json`).
 - Cosmos data-plane RBAC is provisioned via `sqlRoleAssignments` in `cosmos.bicep`. If the app later logs 403s from `DefaultAzureCredential`, the role assignment is the first thing to check.
 
 ## Reporting

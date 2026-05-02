@@ -14,6 +14,8 @@ Argument: `$ARGUMENTS`
 |---|---|
 | `Claude--ApiKey` | `Claude:ApiKey` |
 | `RevenueCat--WebhookSecret` | `RevenueCat:WebhookSecret` |
+| `AzureSpeech--Key` | `AzureSpeech:Key` |
+| `AzureSpeech--Region` | `AzureSpeech:Region` |
 
 The `--` (double hyphen) is intentional — Key Vault forbids `:`, and the configuration provider rewrites `--` to `:`.
 
@@ -48,15 +50,14 @@ For `revenuecat` (or `all`):
 az keyvault secret set --vault-name "$KV" --name RevenueCat--WebhookSecret --file <path-to-revenuecat-secret>
 ```
 
-## Post-set: trigger a config reload
+## Post-set: restart App Service to pick up rotated secrets
 
-The app polls App Configuration every 5 minutes and reloads when the sentinel changes. After rotating a secret, bump the sentinel:
+Key Vault is loaded into `IConfiguration` once at app startup, so rotated secrets do **not** propagate until the App Service restarts:
 
 ```bash
-CUR=$(az appconfig kv show --name pp-appcs-prod --key 'PantryPunk:Sentinel' --query value -o tsv)
-az appconfig kv set --name pp-appcs-prod --key 'PantryPunk:Sentinel' --value $((CUR + 1)) --yes
+az webapp restart --name pp-app-prod --resource-group pp-rg-prod
 ```
 
 ## Reporting
 
-Report which secrets were set (by name only — never echo values), the vault name, the new sentinel value, and confirm the user that the app will pick up the change within ~5 minutes (or sooner if they restart the App Service).
+Report which secrets were set (by name only — never echo values), the vault name, and confirm with the user that the App Service was restarted (or remind them to do so) so the new secret takes effect.

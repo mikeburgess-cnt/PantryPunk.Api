@@ -19,7 +19,7 @@ dotnet run --project PantryPunk.Api/PantryPunk.Api.csproj
 dotnet watch --project PantryPunk.Api/PantryPunk.Api.csproj
 ```
 
-No test project exists yet. When one is added, it should use `dotnet test` from the solution root.
+Tests live in `PantryPunk.Api.Tests/`. Run with `dotnet test` from the solution root.
 
 ## Architecture
 
@@ -29,9 +29,9 @@ No test project exists yet. When one is added, it should use `dotnet test` from 
 - **Database:** Azure Cosmos DB (NoSQL, SQL API) — items are embedded within the `ShoppingListDocument`, not stored separately
 - **File storage:** Azure Blob Storage (`photos` container, public read)
 - **Auth:** Auth0 JWT for registered users + `X-Share-Code` header for guest access (validated by `ShareCodeAuthMiddleware`)
-- **Feature flags:** Azure App Configuration + `Microsoft.FeatureManagement`
+- **Runtime config & feature flags:** Cosmos `AppConfig` container (read per request by `AppConfigMiddleware`, 30s in-memory cache, exposed via `IConfiguration` overlay) + `Microsoft.FeatureManagement`
 - **AI:** Claude API (Sonnet) for image recognition and voice item extraction; Azure AI Speech for audio transcription
-- **Secrets:** Azure Key Vault via managed identity
+- **Secrets:** Azure Key Vault loaded into `IConfiguration` at startup via managed identity
 - **Monitoring:** Application Insights
 
 ## Project Layout
@@ -41,13 +41,13 @@ All source lives under `PantryPunk.Api/`:
 - `Program.cs` — app builder, DI registration, middleware pipeline
 - `Controllers/` — `UserController`, `ListController`, `ImageController`, `VoiceController`, `ShareController`, `FeatureController`, `WebhookController`
 - `Services/` — business logic layer (`UserService`, `ListService`, `ShareService`, `ImageRecognitionService`, `VoiceRecognitionService`, `BlobStorageService`, `FeatureFlagService`)
-- `Repositories/` — Cosmos DB data access (`UserRepository`, `ListRepository`, `ShareRepository`)
-- `Models/Documents/` — Cosmos DB document classes (`UserDocument`, `ShoppingListDocument`, `ShoppingItemDocument`, `ShareCodeDocument`)
+- `Repositories/` — Cosmos DB data access (`UserRepository`, `ListRepository`, `ShareRepository`, `AppConfigRepository`)
+- `Models/Documents/` — Cosmos DB document classes (`UserDocument`, `ShoppingListDocument`, `ShoppingItemDocument`, `ShareCodeDocument`, `AppConfigDocument`)
 - `Models/Requests/` — inbound DTOs
 - `Models/Responses/` — outbound DTOs
-- `Middleware/` — `ShareCodeAuthMiddleware` (guest auth), `RequestLoggingMiddleware`
+- `Middleware/` — `ShareCodeAuthMiddleware` (guest auth), `AppConfigMiddleware` (per-request Cosmos config overlay), `RequestLoggingMiddleware`
 - `Extensions/` — `ClaimsPrincipalExtensions` (Auth0 sub extraction), `ServiceCollectionExtensions` (DI helpers)
-- `Infrastructure/` — `CosmosDbContext`, `AppConfigurationSetup`, `KeyVaultConfiguration`
+- `Infrastructure/` — `CosmosDbContext`, `AmbientConfigurationProvider` (AsyncLocal-backed `IConfigurationSource` for the per-request overlay), `KeyVaultSetup` (loads Key Vault secrets at startup)
 
 ## Key Design Decisions
 
@@ -66,6 +66,7 @@ All source lives under `PantryPunk.Api/`:
 | `Users` | `/userId` | `UserDocument` |
 | `ShoppingLists` | `/listId` | `ShoppingListDocument` (with embedded items) |
 | `ShareCodes` | `/code` | `ShareCodeDocument` |
+| `AppConfig` | `/id` | `AppConfigDocument` (single doc, id `app-config`, flat `settings` dict) |
 
 Database name: `PantryPunkDb`
 
@@ -86,6 +87,6 @@ All errors use `{ "error": "message", "traceId": "..." }`. See spec for status c
 ## Local Development
 
 - Use **Cosmos DB Emulator** and **Azurite** for local storage
-- Override feature flags and `PantryPunk:*` config in `appsettings.Development.json` (see spec for shape)
-- Store local secrets via `dotnet user-secrets` or git-ignored `appsettings.Development.json`
+- Seed an `AppConfig` container with the doc from `infra/seed/app-config.json` to exercise the overlay locally; without it, the middleware falls back and `PantryPunk:*` / `FeatureManagement:*` values come from `appsettings.Development.json`
+- Store local secrets via `dotnet user-secrets` (Key Vault is a no-op locally when `KeyVault:Uri` is unset)
 - Claude model config key: `PantryPunk:Claude:Model` (default `claude-sonnet-4-6`)

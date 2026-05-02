@@ -15,7 +15,9 @@
       "Bash(git -C \"C:\\\\Users\\\\mikeb_8ijjq2q\\\\source\\\\repos\\\\PantryPunk\\\\PantryPunk.Api\" log --oneline -20)",
       "Bash(az bicep build *)",
       "Bash(dotnet publish *)",
-      "Bash(grep -E \"\\\\.cs$\")"
+      "Bash(grep -E \"\\\\.cs$\")",
+      "Bash(grep -E \"\\\\.\\(cs|json\\)$\")",
+      "Bash(az deployment sub show *)"
     ]
   }
 }

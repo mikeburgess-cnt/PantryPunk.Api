@@ -18,7 +18,7 @@
    - [Subscriptions (RevenueCat Webhook)](#subscriptions-revenuecat-webhook)
 9. [Claude API Integration](#claude-api-integration)
 10. [RevenueCat Webhook Handling](#revenuecat-webhook-handling)
-11. [Azure App Configuration](#azure-app-configuration)
+11. [Runtime Configuration (AppConfig)](#runtime-configuration-appconfig)
 12. [File Storage](#file-storage)
 13. [Error Handling](#error-handling)
 14. [Logging & Monitoring](#logging--monitoring)
@@ -53,7 +53,7 @@ Authentication is handled by two mechanisms: Auth0 JWT for registered users, and
 | Database | Azure Cosmos DB (NoSQL, SQL API) |
 | File storage | Azure Blob Storage |
 | Authentication | Auth0 JWT verification (`Microsoft.AspNetCore.Authentication.JwtBearer`) |
-| Configuration & feature flags | Azure App Configuration + `Microsoft.FeatureManagement.AspNetCore` |
+| Configuration & feature flags | Cosmos `AppConfig` container (per-request overlay) + `Microsoft.FeatureManagement.AspNetCore` |
 | Claude API client | Anthropic .NET SDK or raw `HttpClient` |
 | Speech-to-text | Azure AI Speech (Speech-to-Text) — audio transcription for voice recognition |
 | Hosting | Azure App Service (Linux, B2 or higher) |
@@ -133,7 +133,6 @@ Cosmos DB    Azure Blob     External APIs
 | `pantrypunkstorage` | Azure Storage Account | Photo blob storage |
 | `pantrypunk-insights` | Application Insights | Logging and monitoring |
 | `pantrypunk-vault` | Azure Key Vault | Secrets (connection strings, API keys) |
-| `pantrypunk-config` | Azure App Configuration | Feature flags and non-secret configuration |
 | `pantrypunk-speech` | Azure AI Speech | Speech-to-text transcription for Talk It feature |
 | `pantrypunk-plan` | App Service Plan | Compute for the App Service |
 
@@ -150,8 +149,7 @@ Cosmos DB    Azure Blob     External APIs
 The App Service uses a **system-assigned managed identity** to access:
 - Azure Key Vault (secrets)
 - Azure Blob Storage (photo upload/read)
-- Azure Cosmos DB (if using AAD auth)
-- Azure App Configuration (feature flags and configuration)
+- Azure Cosmos DB (data plane — also serves the `AppConfig` container)
 - Azure AI Speech (speech-to-text transcription)
 
 No connection string credentials need to be stored in environment variables.
@@ -217,8 +215,8 @@ PantryPunkApi/
 │
 └── Infrastructure/
     ├── CosmosDbContext.cs
-    ├── AppConfigurationSetup.cs           # Azure App Configuration bootstrap
-    └── KeyVaultConfiguration.cs
+    ├── AmbientConfigurationProvider.cs    # AsyncLocal-backed IConfigurationSource for per-request overlay
+    └── KeyVaultSetup.cs                   # Loads Key Vault secrets into IConfiguration at startup
 ```
 
 ---
@@ -969,7 +967,7 @@ Generates a unique share code for a subscriber. The recipient's name is **not** 
     - `confirmed` = `false`
     - `confirmedAt` = `null`
     - `revokedAt` = `null`
-    - `expiresAt` = `DateTime.UtcNow.AddHours(24)` (configurable via `PantryPunk:ShareCode:ExpiryHours` in Azure App Configuration)
+    - `expiresAt` = `DateTime.UtcNow.AddHours(24)` (configurable via `PantryPunk:ShareCode:ExpiryHours` in the `AppConfig` Cosmos document)
     - `createdAt` = `DateTime.UtcNow`
 9. Write the new `ShareCodeDocument` to the `ShareCodes` container.
 10. Return `200 OK` with the created share code details.
@@ -1112,8 +1110,8 @@ Returns the current set of feature flags for the authenticated user. Called by t
 **Behaviour:**
 - Evaluate each flag via `IFeatureManager.IsEnabledAsync(flagName, userContext)` where `userContext` contains the Auth0 `userId` and `isSubscriber` status.
 - Return all known flags in a single flat object — the app does not call this endpoint per-flag.
-- Flags not explicitly defined in Azure App Configuration default to `false`.
-- Response is cached per-user for 60 seconds to avoid hammering App Configuration on every foreground resume.
+- Flags not explicitly defined in the `AppConfig` Cosmos document default to `false`.
+- Response is cached per-user for 60 seconds to avoid hammering Cosmos on every foreground resume.
 
 ---
 
@@ -1260,80 +1258,74 @@ Use `CryptographicOperations.FixedTimeEquals` (constant-time comparison) to prev
 
 ---
 
-## Azure App Configuration
+## Runtime Configuration (AppConfig)
 
 ### Overview
 
-Azure App Configuration (`pantrypunk-config`) serves two purposes:
-1. **Configuration** — non-secret app settings loaded at startup and refreshed at runtime without redeployment
-2. **Feature flags** — per-user and percentage-based flags managed via `Microsoft.FeatureManagement`
+Runtime configuration and feature flags live in a single Cosmos document in the `AppConfig` container (id `app-config`, partition key `/id`). The doc holds a flat `settings` dictionary keyed by `IConfiguration` paths (e.g. `PantryPunk:Claude:Model`, `FeatureManagement:TalkIt:EnabledFor:0:Name`).
 
-Secrets (connection strings, API keys) remain in Azure Key Vault. Azure App Configuration stores only non-sensitive values — if a value would be dangerous in logs or source control, it goes in Key Vault, not App Configuration.
+`AppConfigMiddleware` reads the doc on each request (with a 30-second in-memory cache, fail-open with last-known-good on Cosmos errors), and publishes the dictionary to an `AsyncLocal` slot on `AmbientConfigurationProvider`. That provider is registered last in the global `IConfigurationRoot` chain, so its values override anything in `appsettings.json` or App Service env vars for every consumer that resolves `IConfiguration` per request — including `Microsoft.FeatureManagement`.
+
+Secrets (Claude API key, RevenueCat webhook secret, Azure Speech key/region) live in Azure Key Vault and are loaded into `IConfiguration` once at app startup via `Azure.Extensions.AspNetCore.Configuration.Secrets`. Bootstrap-only values (Cosmos endpoint, database name, blob account, Auth0 domain/audience, Key Vault URI) live in App Service env vars — they cannot live in the AppConfig doc because we need them in order to read the doc.
 
 ### NuGet Packages
 
 ```xml
-<PackageReference Include="Microsoft.Azure.AppConfiguration.AspNetCore" Version="*" />
 <PackageReference Include="Microsoft.FeatureManagement.AspNetCore" Version="*" />
+<PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="*" />
 ```
 
 ### Bootstrap in `Program.cs`
 
 ```csharp
-// Load App Configuration using managed identity — no connection string needed
-builder.Configuration.AddAzureAppConfiguration(options =>
-{
-    options.Connect(
-        new Uri("https://pantrypunk-config.azconfig.io"),
-        new ManagedIdentityCredential())
-    .Select("PantryPunk:*")                    // Load all PantryPunk: prefixed keys
-    .ConfigureRefresh(refresh =>
-    {
-        // Refresh all config when this sentinel key changes
-        refresh.Register("PantryPunk:Sentinel", refreshAll: true)
-               .SetRefreshInterval(TimeSpan.FromMinutes(5));
-    })
-    .UseFeatureFlags(flags =>
-    {
-        flags.SetRefreshInterval(TimeSpan.FromMinutes(5));
-    });
-});
+// Loads Key Vault secrets into IConfiguration if KeyVault:Uri is set; no-op otherwise.
+builder.AddKeyVaultSecrets();
 
-builder.Services.AddAzureAppConfiguration();
+// Per-request overlay populated by AppConfigMiddleware. Sits last in the chain so its values win.
+((IConfigurationBuilder)builder.Configuration).Add(new AmbientConfigurationProvider());
+
+builder.Services.AddMemoryCache();
 builder.Services.AddFeatureManagement();
 ```
 
-Add the refresh middleware to the pipeline:
+In the request pipeline:
 
 ```csharp
-app.UseAzureAppConfiguration(); // must be before UseRouting
+app.UseMiddleware<AppConfigMiddleware>(); // must run before anything that reads PantryPunk:* / FeatureManagement:*
 ```
 
 ### Configuration Keys
 
-All keys are prefixed with `PantryPunk:` in Azure App Configuration.
+Stored in the `settings` dictionary on the `app-config` document.
 
 | Key | Type | Example Value | Purpose |
 |---|---|---|---|
-| `PantryPunk:Sentinel` | String | `v1` | Bump this value to trigger a config refresh across all instances |
 | `PantryPunk:Claude:Model` | String | `claude-sonnet-4-6` | Claude model to use for AI features |
 | `PantryPunk:Claude:MaxTokensImage` | Integer | `256` | Max tokens for image recognition responses |
 | `PantryPunk:Claude:MaxTokensVoice` | Integer | `512` | Max tokens for voice recognition responses |
-| `PantryPunk:RateLimit:AiRequestsPerMinute` | Integer | `30` | Max AI requests per user per minute |
+| `PantryPunk:RateLimit:AiRequestsPerMinute` | Integer | `30` | Max AI requests per user per minute (startup-frozen — see note below) |
+| `PantryPunk:RateLimit:ShareConfirmPerHour` | Integer | `10` | Per-IP confirm rate (startup-frozen) |
+| `PantryPunk:RateLimit:PerIpPerMinute` | Integer | `120` | Global per-IP rate (startup-frozen) |
 | `PantryPunk:ShareCode:ExpiryHours` | Integer | `24` | Hours before an unconfirmed share code expires |
-| `PantryPunk:Features:TalkIt` | Feature flag | — | Enables the Talk It voice recording feature |
-| `PantryPunk:Features:RealtimeSync` | Feature flag | — | Enables WebSocket real-time list sync |
-| `PantryPunk:Features:AnnualSubscription` | Feature flag | — | Shows annual plan option on Paywall screen |
-| `PantryPunk:Features:AppAttest` | Feature flag | — | Enables App Attest / Play Integrity enforcement |
+| `FeatureManagement:TalkIt:*` | Targeting filter | — | Enables the Talk It voice recording feature |
+| `FeatureManagement:RealtimeSync:*` | Targeting filter | — | Enables WebSocket real-time list sync |
+| `FeatureManagement:AnnualSubscription:*` | Targeting filter | — | Shows annual plan option on Paywall screen |
+| `FeatureManagement:AppAttest:*` | Targeting filter | — | Enables App Attest / Play Integrity enforcement |
+
+> **Rate-limit values are startup-frozen.** `AddRateLimiter` partition factories capture the values at app build time. Editing rate-limit keys in the AppConfig doc has no effect until the App Service restarts. They live in the doc for visibility/documentation only; treat them as deploy-time config.
+
+The canonical seed document lives at `infra/seed/app-config.json` and is auto-seeded into Cosmos on first deploy by the `seedAppConfig` Bicep module (create-if-not-exists; existing documents are left untouched on re-deploy).
 
 ### Feature Flag Definitions
 
-Feature flags are managed in the Azure App Configuration portal under **Feature Manager**. Each flag supports:
+Flags use the standard `Microsoft.FeatureManagement` schema, expressed as flat keys under `FeatureManagement:`. Each flag supports the same filters as before — `Microsoft.Targeting` for percentage rollout and group-based targeting is wired in the seed doc:
 
-- **On/Off** — globally enabled or disabled
-- **Percentage rollout** — e.g. enable for 10% of users
-- **User targeting** — enable for specific Auth0 user IDs (useful for internal testing)
-- **Time window** — enable between specific dates (useful for scheduled launches)
+```jsonc
+"FeatureManagement:TalkIt:EnabledFor:0:Name": "Microsoft.Targeting",
+"FeatureManagement:TalkIt:EnabledFor:0:Parameters:Audience:DefaultRolloutPercentage": "0",
+"FeatureManagement:TalkIt:EnabledFor:0:Parameters:Audience:Groups:0:Name": "subscribers",
+"FeatureManagement:TalkIt:EnabledFor:0:Parameters:Audience:Groups:0:RolloutPercentage": "0"
+```
 
 #### Defined Flags
 
@@ -1387,7 +1379,7 @@ else
 
 ### Local Development
 
-For local development, feature flags and configuration can be overridden in `appsettings.Development.json` without needing to connect to Azure App Configuration:
+For local development, run the API without an `AppConfig` Cosmos document — the middleware fails open and `IConfiguration` falls through to `appsettings.Development.json`:
 
 ```json
 {
@@ -1412,6 +1404,8 @@ For local development, feature flags and configuration can be overridden in `app
   }
 }
 ```
+
+To exercise the overlay end-to-end against the Cosmos Emulator, create an `AppConfig` container with partition key `/id` and paste `infra/seed/app-config.json`.
 
 ---
 
@@ -1536,13 +1530,13 @@ _logger.LogInformation(
 
 - Use **Azure Cosmos DB Emulator** for local database development
 - Use **Azurite** for local blob storage emulation
-- Override feature flags and configuration in `appsettings.Development.json` — Azure App Configuration is not used locally (see Azure App Configuration section for the local override shape)
+- Override feature flags and configuration in `appsettings.Development.json` (the AppConfig middleware fails open when no Cosmos document is present), or seed an `AppConfig` container in the Emulator from `infra/seed/app-config.json` to exercise the overlay path end-to-end (see Runtime Configuration section)
 - Store local secrets in `appsettings.Development.json` (git-ignored) or .NET User Secrets (`dotnet user-secrets`)
 - Set `ASPNETCORE_ENVIRONMENT=Development` locally
 
 ### Configuration Shape (`appsettings.json`)
 
-`appsettings.json` contains only the bootstrapping values needed to connect to Azure services. All runtime configuration is loaded from Azure App Configuration. Secrets are resolved from Azure Key Vault at runtime via managed identity.
+`appsettings.json` contains only the bootstrapping values needed to connect to Azure services. `PantryPunk:*` and `FeatureManagement:*` runtime keys come from the `AppConfig` Cosmos document via the per-request overlay. Secrets come from Azure Key Vault, loaded once at startup via managed identity.
 
 ```json
 {
@@ -1550,8 +1544,8 @@ _logger.LogInformation(
     "Domain": "<your-auth0-domain>",
     "Audience": "<your-auth0-api-audience>"
   },
-  "AzureAppConfiguration": {
-    "Endpoint": "https://pantrypunk-config.azconfig.io"
+  "KeyVault": {
+    "Uri": "https://<vault-name>.vault.azure.net/"
   },
   "CosmosDb": {
     "AccountEndpoint": "https://<account>.documents.azure.com:443/",
@@ -1567,7 +1561,7 @@ _logger.LogInformation(
 }
 ```
 
-> All `PantryPunk:*` keys (Claude model, rate limits, share code expiry, etc.) are loaded from Azure App Configuration at runtime — not stored in `appsettings.json`. RevenueCat webhook secret and other secrets are stored in Azure Key Vault.
+> All `PantryPunk:*` and `FeatureManagement:*` keys (Claude model, rate limits, share code expiry, feature flags) live in the `AppConfig` Cosmos document — not in `appsettings.json`. The Claude API key, RevenueCat webhook secret, and Azure Speech key/region live in Key Vault and are loaded at startup.
 
 ### Azure DevOps Pipeline
 
@@ -1588,8 +1582,7 @@ Register a health check endpoint for App Service:
 ```csharp
 builder.Services.AddHealthChecks()
     .AddCosmosDb(cosmosConnectionString)
-    .AddAzureBlobStorage(storageConnectionString)
-    .AddAzureAppConfiguration();
+    .AddAzureBlobStorage(storageConnectionString);
 
 app.MapHealthChecks("/health");
 ```

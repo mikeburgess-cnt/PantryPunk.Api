@@ -60,6 +60,17 @@ resource shareCodesContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases
   }
 }
 
+resource appConfigContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: database
+  name: 'AppConfig'
+  properties: {
+    resource: {
+      id: 'AppConfig'
+      partitionKey: { paths: ['/id'], kind: 'Hash' }
+    }
+  }
+}
+
 // Cosmos DB Built-in Data Contributor (data-plane RBAC — not an ARM role assignment)
 resource sqlRoleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-05-15' = {
   parent: cosmosAccount
