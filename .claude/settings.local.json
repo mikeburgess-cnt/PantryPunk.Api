@@ -19,7 +19,9 @@
       "Bash(grep -E \"\\\\.\\(cs|json\\)$\")",
       "Bash(az deployment sub show *)",
       "Bash(grep -A 30 \"#### \\\\`POST /api/share/generate-code\\\\`\" /c/Users/mikeb_8ijjq2q/source/repos/PantryPunk/PantryPunk.Api/docs/spec-api.md)",
-      "Bash(grep *)"
+      "Bash(grep *)",
+      "Bash(az deployment *)",
+      "Bash(az webapp *)"
     ]
   }
 }

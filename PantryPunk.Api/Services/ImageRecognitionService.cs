@@ -9,6 +9,7 @@ public class ImageRecognitionService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
     private readonly ILogger<ImageRecognitionService> _logger;
+    private readonly AiTokenMetrics _aiTokenMetrics;
 
     //private const string SystemPrompt = """
     //    You are a grocery item recognition assistant.
@@ -100,11 +101,13 @@ public class ImageRecognitionService
     public ImageRecognitionService(
         IHttpClientFactory httpClientFactory,
         IConfiguration configuration,
-        ILogger<ImageRecognitionService> logger)
+        ILogger<ImageRecognitionService> logger,
+        AiTokenMetrics aiTokenMetrics)
     {
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
         _logger = logger;
+        _aiTokenMetrics = aiTokenMetrics;
     }
 
     public async Task<ImageRecognitionResult?> RecogniseAsync(byte[] imageBytes, string mediaType)
@@ -155,6 +158,16 @@ public class ImageRecognitionService
 
         var responseJson = await response.Content.ReadAsStringAsync();
         var claudeResponse = JsonSerializer.Deserialize<JsonElement>(responseJson);
+
+        if (claudeResponse.TryGetProperty("usage", out var usage))
+        {
+            _aiTokenMetrics.TrackAnthropic(
+                model,
+                usage.TryGetProperty("input_tokens", out var inputTokens) ? inputTokens.GetInt32() : 0,
+                usage.TryGetProperty("output_tokens", out var outputTokens) ? outputTokens.GetInt32() : 0,
+                usage.TryGetProperty("cache_creation_input_tokens", out var cacheCreation) ? cacheCreation.GetInt32() : 0,
+                usage.TryGetProperty("cache_read_input_tokens", out var cacheRead) ? cacheRead.GetInt32() : 0);
+        }
 
         var textContent = claudeResponse.GetProperty("content")[0].GetProperty("text").GetString();
         if (string.IsNullOrEmpty(textContent))

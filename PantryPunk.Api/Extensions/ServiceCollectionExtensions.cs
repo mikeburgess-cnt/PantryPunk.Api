@@ -84,6 +84,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ImageFileValidator>();
         services.AddScoped<ImageRecognitionService>();
         services.AddScoped<FeatureFlagService>();
+        services.AddSingleton<AiTokenMetrics>();
         return services;
     }
 }
