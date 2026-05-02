@@ -921,7 +921,7 @@ Non-subscriber submits a code to join a shared list **and provides their own dis
 - Return `410 Gone` if `expiresAt` has passed and `confirmed == false`.
 - Return `410 Gone` if `revokedAt` is set.
 - If valid and not yet confirmed: set `recipientName = <trimmed request value>`, `confirmed = true`, `confirmedAt = DateTime.UtcNow`. Write the updated document back to the `ShareCodes` container.
-- If valid and already confirmed (idempotent re-confirm): leave the stored `recipientName` intact — first-confirm wins. The new name in the request is ignored.
+- If valid and already confirmed (idempotent re-confirm): overwrite the stored `recipientName` with the trimmed request value if it differs, and write the updated document. `confirmedAt` is **not** changed on re-confirm — it remains the timestamp of the first confirmation. If the supplied name matches what is already stored, no write occurs.
 - Return `200 OK` with the full `ShareCodeResponse` (same shape as `GET /api/share` items). The `shareId` field is what the guest passes to `DELETE /api/share/:shareId` to leave the list (self-revoke).
 
 **Response `200 OK`:**

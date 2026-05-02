@@ -80,13 +80,24 @@ public class ShareService
         if (!document.Confirmed && document.ExpiresAt < DateTime.UtcNow)
             return (null, "Invalid, expired, or revoked code");
 
+        var newName = request.RecipientName.Trim();
+        var mutated = false;
+
         if (!document.Confirmed)
         {
-            document.RecipientName = request.RecipientName.Trim();
+            document.RecipientName = newName;
             document.Confirmed = true;
             document.ConfirmedAt = DateTime.UtcNow;
-            await _shareRepository.ReplaceAsync(document);
+            mutated = true;
         }
+        else if (!string.Equals(document.RecipientName, newName, StringComparison.Ordinal))
+        {
+            document.RecipientName = newName;
+            mutated = true;
+        }
+
+        if (mutated)
+            await _shareRepository.ReplaceAsync(document);
 
         return (MapToListResponse(document), null);
     }

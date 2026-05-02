@@ -151,7 +151,33 @@ public class ShareServiceTests
     }
 
     [Fact]
-    public async Task ConfirmCodeAsync_AlreadyConfirmed_DoesNotReconfirm()
+    public async Task ConfirmCodeAsync_AlreadyConfirmed_NewName_OverwritesAndPreservesConfirmedAt()
+    {
+        var confirmedAt = DateTime.UtcNow.AddHours(-2);
+        var doc = new ShareCodeDocument
+        {
+            Id = "sc-1", Code = "ABC123", RecipientName = "Natalie",
+            Confirmed = true, ConfirmedAt = confirmedAt,
+            ExpiresAt = DateTime.UtcNow.AddHours(-1), // expired but already confirmed
+            OwnerUserId = "auth0|owner", ListId = "list-1", CreatedAt = DateTime.UtcNow
+        };
+        _shareRepo.Setup(r => r.GetByCodeAsync("ABC123")).ReturnsAsync(doc);
+        _shareRepo.Setup(r => r.ReplaceAsync(It.IsAny<ShareCodeDocument>()))
+            .ReturnsAsync((ShareCodeDocument d) => d);
+
+        var (response, _) = await _sut.ConfirmCodeAsync(
+            new ConfirmShareCodeRequest { Code = "ABC123", RecipientName = "Nat" });
+
+        Assert.NotNull(response);
+        Assert.Equal("Nat", response!.RecipientName);
+        Assert.Equal("sc-1", response.ShareId);
+        Assert.Equal("Nat", doc.RecipientName);
+        Assert.Equal(confirmedAt, doc.ConfirmedAt); // not overwritten on re-confirm
+        _shareRepo.Verify(r => r.ReplaceAsync(It.Is<ShareCodeDocument>(d => d.RecipientName == "Nat")), Times.Once);
+    }
+
+    [Fact]
+    public async Task ConfirmCodeAsync_AlreadyConfirmed_SameName_DoesNotWrite()
     {
         var confirmedAt = DateTime.UtcNow.AddHours(-2);
         var doc = new ShareCodeDocument
@@ -163,12 +189,13 @@ public class ShareServiceTests
         };
         _shareRepo.Setup(r => r.GetByCodeAsync("ABC123")).ReturnsAsync(doc);
 
-        var (response, _) = await _sut.ConfirmCodeAsync(new ConfirmShareCodeRequest { Code = "ABC123" });
+        var (response, _) = await _sut.ConfirmCodeAsync(
+            new ConfirmShareCodeRequest { Code = "ABC123", RecipientName = "  Natalie  " });
 
         Assert.NotNull(response);
         Assert.Equal("Natalie", response!.RecipientName);
-        Assert.Equal("sc-1", response.ShareId);
-        Assert.Equal(confirmedAt, doc.ConfirmedAt); // not overwritten
+        Assert.Equal("Natalie", doc.RecipientName);
+        Assert.Equal(confirmedAt, doc.ConfirmedAt);
         _shareRepo.Verify(r => r.ReplaceAsync(It.IsAny<ShareCodeDocument>()), Times.Never);
     }
 
