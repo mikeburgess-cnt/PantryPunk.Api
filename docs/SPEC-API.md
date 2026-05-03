@@ -301,6 +301,7 @@ Endpoints that require subscriber status (e.g. `POST /api/share/generate-code`) 
 | `POST /api/share/generate-code` | JWT + isSubscriber | |
 | `POST /api/share/confirm-code` | None | Public endpoint |
 | `GET /api/share` | JWT + isSubscriber | Replaces polling status endpoint; share-code guests are rejected |
+| `PATCH /api/share/:shareId` | (JWT + isSubscriber) or Share Code (self only) | Subscribers may rename any of their guests; guests may only rename themselves |
 | `DELETE /api/share/:shareId` | (JWT + isSubscriber) or Share Code (self only) | Guests may only revoke the code they authenticated with |
 | `GET /api/household/members` | JWT or Share Code | Owner + active confirmed guests; owner first; called by both subscribers and guests |
 | `POST /api/webhooks/revenuecat` | RevenueCat signature | Not Auth0 |
@@ -924,7 +925,7 @@ Non-subscriber submits a code to join a shared list **and provides their own dis
 - Return `410 Gone` if `revokedAt` is set.
 - If valid and not yet confirmed: set `recipientName = <trimmed request value>`, `confirmed = true`, `confirmedAt = DateTime.UtcNow`. Write the updated document back to the `ShareCodes` container.
 - If valid and already confirmed (idempotent re-confirm): overwrite the stored `recipientName` with the trimmed request value if it differs, and write the updated document. `confirmedAt` is **not** changed on re-confirm — it remains the timestamp of the first confirmation. If the supplied name matches what is already stored, no write occurs.
-- Return `200 OK` with the full `ShareCodeResponse` (same shape as `GET /api/share` items). The `shareId` field is what the guest passes to `DELETE /api/share/:shareId` to leave the list (self-revoke).
+- Return `200 OK` with the full `ShareCodeResponse` (same shape as `GET /api/share` items). The `shareId` field is what the guest passes to `DELETE /api/share/:shareId` to leave the list (self-revoke) or `PATCH /api/share/:shareId` to rename themselves (self-rename).
 
 **Response `200 OK`:**
 ```json
@@ -986,9 +987,14 @@ Only confirmed codes are returned, so `confirmed` is always `true` and `recipien
 
 #### `PATCH /api/share/:shareId`
 
-Lets the subscriber who owns the share code rename the recipient. Only the list owner may rename a guest — share-code guests are rejected by the `RegisteredUser` policy. Useful when the guest typed an unrecognisable name at confirmation time, or when the owner wants a consistent label in the household roster shown by `GET /api/share`.
+Renames the recipient on a share code. Accepts two caller modes, mirroring `DELETE /api/share/:shareId`:
 
-**Auth:** Auth0 JWT + `isSubscriber`
+1. **Subscriber (Auth0 JWT + `isSubscriber`):** may rename any guest on a share code they own. Useful when the guest typed an unrecognisable name at confirmation time, or when the owner wants a consistent label in the household roster shown by `GET /api/share`.
+2. **Share-code guest (`X-Share-Code` header):** may rename **only** themselves — i.e. the share code they authenticated with. This is the "edit my display name" action from the household screen.
+
+**Auth:** Auth0 JWT + `isSubscriber`, **or** `X-Share-Code` (self only)
+
+**Rate limit:** Per principal — bucketed by `ShareId` for guests and by `userId` for JWT subscribers. Default 10 requests / hour, configurable via `PantryPunk:RateLimit:ShareUpdatePerHour`. Renames are infrequent in practice; the cap is set low to make abuse uninteresting.
 
 **Request:**
 ```json
@@ -1000,11 +1006,11 @@ Lets the subscriber who owns the share code rename the recipient. Only the list 
 `recipientName` is required, 1–64 characters after trimming.
 
 **Behaviour:**
-1. Extract `userId` from the Auth0 JWT `sub` claim. Share-code guests are rejected by the `RegisteredUser` policy and never reach this handler.
-2. Load the caller's `UserDocument` and return `403 Forbidden` with `{ "error": "Sharing requires an active subscription." }` if `isSubscriber` is false.
-3. Look up the share code with the same scoped query used by `DELETE /api/share/:shareId`: `SELECT * FROM c WHERE c.id = @shareId AND c.ownerUserId = @userId`.
-4. Return `404 Not Found` with `{ "error": "Share code not found." }` if no document is returned. This covers both "shareId does not exist" and "shareId exists but is owned by a different subscriber" — we deliberately return 404 (not 403) so we do not leak the existence of share codes owned by other subscribers.
-5. Return `409 Conflict` with `{ "error": "Share code has not been confirmed by the recipient yet." }` if `confirmed == false`. The recipient name only exists once the guest has joined; until then there is nothing to rename.
+1. If the caller is a share-code guest, compare the route `shareId` against the `ShareId` claim injected by `ShareCodeAuthMiddleware`. Return `403 Forbidden` with `{ "error": "You can only update your own display name." }` if they differ. Skip the subscriber check.
+2. If the caller is a JWT user, load their `UserDocument` and return `403 Forbidden` with `{ "error": "Sharing requires an active subscription." }` if `isSubscriber` is false.
+3. Look up the share code with the same scoped query used by `DELETE /api/share/:shareId`: `SELECT * FROM c WHERE c.id = @shareId AND c.ownerUserId = @userId`. For share-code guests, `userId` is the owner's id (injected by the middleware), so the ownership check is preserved.
+4. Return `404 Not Found` with `{ "error": "Share code not found." }` if no document is returned. For JWT callers this covers both "shareId does not exist" and "shareId exists but is owned by a different subscriber" — we deliberately return 404 (not 403) so we do not leak the existence of share codes owned by other subscribers.
+5. Return `409 Conflict` with `{ "error": "Share code has not been confirmed by the recipient yet." }` if `confirmed == false`. The recipient name only exists once the guest has joined; until then there is nothing to rename. (Unreachable for share-code guests in practice — the middleware rejects unconfirmed codes during auth — but the check stays as defence in depth.)
 6. Trim the supplied `recipientName`. If it equals the stored `recipientName` (ordinal comparison), return `200 OK` with the existing `ShareCodeResponse` and **do not** write to Cosmos. Mirrors the idempotent re-confirm behaviour in `POST /api/share/confirm-code`.
 7. Otherwise overwrite `recipientName` with the trimmed value and write the updated `ShareCodeDocument` back to the container. `confirmedAt`, `createdAt`, `expiresAt`, `confirmed`, and `revokedAt` are not changed.
 8. Return `200 OK` with the full `ShareCodeResponse` (same shape as `GET /api/share` items).

@@ -155,6 +155,20 @@ builder.Services.AddRateLimiter(options =>
         });
     });
 
+    // Per-principal limiter for share-code rename. Partition by ShareId for guests
+    // (so each guest gets their own bucket) and by NameIdentifier for JWT subscribers.
+    options.AddPolicy("share-update", context =>
+    {
+        var shareId = context.User.FindFirst("ShareId")?.Value;
+        var userId = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var key = shareId != null ? $"su:g:{shareId}" : $"su:u:{userId ?? "anonymous"}";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = builder.Configuration.GetValue("PantryPunk:RateLimit:ShareUpdatePerHour", 10),
+            Window = TimeSpan.FromHours(1)
+        });
+    });
+
     // Global catch-all per-IP limiter — requires H3 (ForwardedHeaders) for real client IP
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
     {

@@ -110,9 +110,18 @@ public class ShareService
     }
 
     public async Task<(ShareCodeResponse? response, string? error, int? statusCode)> UpdateRecipientNameAsync(
-        string shareId, string userId, UpdateShareCodeRecipientNameRequest request)
+        string shareId, string userId, bool isShareCodeUser, string? authenticatedShareId,
+        UpdateShareCodeRecipientNameRequest request)
     {
-        await _userService.RequireSubscriberAsync(userId);
+        if (isShareCodeUser)
+        {
+            if (authenticatedShareId != shareId)
+                throw new ForbiddenException("You can only update your own display name.");
+        }
+        else
+        {
+            await _userService.RequireSubscriberAsync(userId);
+        }
 
         var document = await _shareRepository.GetByIdAndOwnerAsync(shareId, userId);
         if (document == null)

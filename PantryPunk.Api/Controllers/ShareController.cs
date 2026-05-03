@@ -81,7 +81,8 @@ public class ShareController : ControllerBase
     }
 
     [HttpPatch("{shareId}")]
-    [Authorize(Policy = "RegisteredUser")]
+    [Authorize]
+    [EnableRateLimiting("share-update")]
     [ProducesResponseType<ShareCodeResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status403Forbidden)]
@@ -94,8 +95,12 @@ public class ShareController : ControllerBase
         try
         {
             var userId = User.GetUserId();
+            var isGuest = User.IsShareCodeUser();
+            var authedShareId = User.GetShareId();
+
             var (response, error, statusCode) =
-                await _shareService.UpdateRecipientNameAsync(shareId, userId, request);
+                await _shareService.UpdateRecipientNameAsync(
+                    shareId, userId, isGuest, authedShareId, request);
 
             if (response == null)
                 return StatusCode(statusCode!.Value, new ErrorResponse { Error = error! });

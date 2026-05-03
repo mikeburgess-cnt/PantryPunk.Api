@@ -245,7 +245,7 @@ public class ShareServiceTests
             .ReturnsAsync((ShareCodeDocument d) => d);
 
         var (response, error, statusCode) = await _sut.UpdateRecipientNameAsync(
-            "sc-1", "auth0|owner",
+            "sc-1", "auth0|owner", isShareCodeUser: false, authenticatedShareId: null,
             new UpdateShareCodeRecipientNameRequest { RecipientName = "Nat" });
 
         Assert.NotNull(response);
@@ -270,7 +270,7 @@ public class ShareServiceTests
         _shareRepo.Setup(r => r.GetByIdAndOwnerAsync("sc-1", "auth0|owner")).ReturnsAsync(doc);
 
         var (response, error, statusCode) = await _sut.UpdateRecipientNameAsync(
-            "sc-1", "auth0|owner",
+            "sc-1", "auth0|owner", isShareCodeUser: false, authenticatedShareId: null,
             new UpdateShareCodeRecipientNameRequest { RecipientName = "  Natalie  " });
 
         Assert.NotNull(response);
@@ -289,6 +289,7 @@ public class ShareServiceTests
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
             _sut.UpdateRecipientNameAsync("sc-1", "auth0|free",
+                isShareCodeUser: false, authenticatedShareId: null,
                 new UpdateShareCodeRecipientNameRequest { RecipientName = "Alice" }));
 
         _shareRepo.Verify(r => r.GetByIdAndOwnerAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
@@ -306,7 +307,7 @@ public class ShareServiceTests
             .ReturnsAsync((ShareCodeDocument?)null);
 
         var (response, error, statusCode) = await _sut.UpdateRecipientNameAsync(
-            "sc-victim", "auth0|attacker",
+            "sc-victim", "auth0|attacker", isShareCodeUser: false, authenticatedShareId: null,
             new UpdateShareCodeRecipientNameRequest { RecipientName = "Hacked" });
 
         Assert.Null(response);
@@ -323,7 +324,7 @@ public class ShareServiceTests
             .ReturnsAsync((ShareCodeDocument?)null);
 
         var (response, error, statusCode) = await _sut.UpdateRecipientNameAsync(
-            "missing", "auth0|owner",
+            "missing", "auth0|owner", isShareCodeUser: false, authenticatedShareId: null,
             new UpdateShareCodeRecipientNameRequest { RecipientName = "Natalie" });
 
         Assert.Null(response);
@@ -344,13 +345,51 @@ public class ShareServiceTests
         _shareRepo.Setup(r => r.GetByIdAndOwnerAsync("sc-1", "auth0|owner")).ReturnsAsync(doc);
 
         var (response, error, statusCode) = await _sut.UpdateRecipientNameAsync(
-            "sc-1", "auth0|owner",
+            "sc-1", "auth0|owner", isShareCodeUser: false, authenticatedShareId: null,
             new UpdateShareCodeRecipientNameRequest { RecipientName = "Natalie" });
 
         Assert.Null(response);
         Assert.Equal(409, statusCode);
         Assert.Equal("Share code has not been confirmed by the recipient yet.", error);
         _shareRepo.Verify(r => r.ReplaceAsync(It.IsAny<ShareCodeDocument>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateRecipientNameAsync_GuestSelfRename_UpdatesAndSkipsSubscriberCheck()
+    {
+        var doc = new ShareCodeDocument
+        {
+            Id = "sc-1", Code = "ABC123", OwnerUserId = "auth0|owner", ListId = "list-1",
+            RecipientName = "Natalie", Confirmed = true, ConfirmedAt = DateTime.UtcNow.AddHours(-1),
+            ExpiresAt = DateTime.UtcNow.AddHours(23), CreatedAt = DateTime.UtcNow.AddHours(-2)
+        };
+        _shareRepo.Setup(r => r.GetByIdAndOwnerAsync("sc-1", "auth0|owner")).ReturnsAsync(doc);
+        _shareRepo.Setup(r => r.ReplaceAsync(It.IsAny<ShareCodeDocument>()))
+            .ReturnsAsync((ShareCodeDocument d) => d);
+
+        var (response, error, statusCode) = await _sut.UpdateRecipientNameAsync(
+            "sc-1", "auth0|owner", isShareCodeUser: true, authenticatedShareId: "sc-1",
+            new UpdateShareCodeRecipientNameRequest { RecipientName = "Nat" });
+
+        Assert.NotNull(response);
+        Assert.Equal("Nat", response!.RecipientName);
+        Assert.Null(error);
+        Assert.Null(statusCode);
+        _shareRepo.Verify(r => r.ReplaceAsync(It.Is<ShareCodeDocument>(d => d.RecipientName == "Nat")), Times.Once);
+        _userService.Verify(s => s.RequireSubscriberAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateRecipientNameAsync_GuestMismatchedShareId_ThrowsForbidden()
+    {
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.UpdateRecipientNameAsync(
+                "sc-other", "auth0|owner", isShareCodeUser: true, authenticatedShareId: "sc-self",
+                new UpdateShareCodeRecipientNameRequest { RecipientName = "Hacker" }));
+
+        _shareRepo.Verify(r => r.GetByIdAndOwnerAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        _shareRepo.Verify(r => r.ReplaceAsync(It.IsAny<ShareCodeDocument>()), Times.Never);
+        _userService.Verify(s => s.RequireSubscriberAsync(It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
