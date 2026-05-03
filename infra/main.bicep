@@ -4,7 +4,7 @@ param location string
 param env string
 param auth0Domain string
 param auth0Audience string
-param appServicePlanSku string = 'B1'
+param appServicePlanSku string = 'B2'
 param logRetentionDays int = 30
 // Pass 'api.pantrypunk.ai' only after DNS (CNAME + asuid TXT) is configured
 param apiCustomHostname string = ''

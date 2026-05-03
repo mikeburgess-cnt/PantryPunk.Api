@@ -11,7 +11,7 @@ Bicep templates that provision all Azure resources for PantryPunk.Api using mana
 | `pp-kv-prod` | Key Vault (RBAC auth, purge-protected) |
 | `pp-cosmos-prod` | Cosmos DB (serverless, SQL API) — also hosts the `AppConfig` runtime config doc |
 | `ppstprod` | Storage account (private blobs, no shared key) |
-| `pp-plan-prod` | App Service Plan (Linux B1) |
+| `pp-plan-prod` | App Service Plan (Linux B2) |
 | `pp-app-prod` | App Service (.NET 10, system-assigned MI) |
 
 ## Prerequisites

@@ -7,14 +7,27 @@ namespace PantryPunk.Api.Middleware;
 public class ShareCodeAuthMiddleware
 {
     private readonly RequestDelegate _next;
+    private readonly ILogger<ShareCodeAuthMiddleware> _logger;
 
-    public ShareCodeAuthMiddleware(RequestDelegate next)
+    public ShareCodeAuthMiddleware(RequestDelegate next, ILogger<ShareCodeAuthMiddleware> logger)
     {
         _next = next;
+        _logger = logger;
     }
 
     public async Task InvokeAsync(HttpContext context)
     {
+        // TEMP DEBUG: remove once share-code bug is resolved
+        var shareCodeHeaderValue = context.Request.Headers.TryGetValue("X-Share-Code", out var hdr)
+            ? hdr.ToString()
+            : "(missing)";
+        _logger.LogInformation(
+            "ShareCode debug Path={Path} Method={Method} ShareCode={ShareCode} JwtAuthenticated={JwtAuthenticated}",
+            context.Request.Path,
+            context.Request.Method,
+            shareCodeHeaderValue,
+            context.User.Identity?.IsAuthenticated == true);
+
         // Skip if already authenticated via JWT
         if (context.User.Identity?.IsAuthenticated == true)
         {
