@@ -39,8 +39,8 @@ Tests live in `PantryPunk.Api.Tests/`. Run with `dotnet test` from the solution 
 All source lives under `PantryPunk.Api/`:
 
 - `Program.cs` — app builder, DI registration, middleware pipeline
-- `Controllers/` — `UserController`, `ListController`, `ImageController`, `ShareController`, `FeatureController`, `WebhookController`
-- `Services/` — business logic layer (`UserService`, `ListService`, `ShareService`, `ImageRecognitionService`, `BlobStorageService`, `FeatureFlagService`)
+- `Controllers/` — `UserController`, `ListController`, `ImageController`, `ShareController`, `HouseholdController`, `FeatureController`, `WebhookController`
+- `Services/` — business logic layer (`UserService`, `ListService`, `ShareService`, `HouseholdService`, `ImageRecognitionService`, `BlobStorageService`, `FeatureFlagService`)
 - `Repositories/` — Cosmos DB data access (`UserRepository`, `ListRepository`, `ShareRepository`, `AppConfigRepository`)
 - `Models/Documents/` — Cosmos DB document classes (`UserDocument`, `ShoppingListDocument`, `ShoppingItemDocument`, `ShareCodeDocument`, `AppConfigDocument`)
 - `Models/Requests/` — inbound DTOs
@@ -77,7 +77,7 @@ Database name: `PantryPunkDb`
 | Share Code | `X-Share-Code: <code>` | Non-subscriber guests |
 | None | — | `POST /api/share/confirm-code` and `POST /api/webhooks/revenuecat` only |
 
-If both headers present, JWT takes precedence. `DELETE /api/share/:shareId` uniquely accepts either mode (guests may only revoke their own code); all other `/api/share/*` endpoints are JWT-only and require `isSubscriber == true`.
+If both headers present, JWT takes precedence. `DELETE /api/share/:shareId` and `GET /api/household/members` accept either mode (for the DELETE, guests may only revoke their own code; for the household read, the share-code middleware surfaces the owner's userId via the `NameIdentifier` claim so the same handler serves both auth paths). All other `/api/share/*` endpoints are JWT-only and require `isSubscriber == true`.
 
 ## Error Response Shape
 

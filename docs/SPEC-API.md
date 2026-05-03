@@ -13,6 +13,7 @@
    - [User Profile](#user-profile)
    - [Shopping List](#shopping-list)
    - [Sharing](#sharing)
+   - [Household](#household)
    - [Feature Flags](#feature-flags-endpoint)
    - [Subscriptions (RevenueCat Webhook)](#subscriptions-revenuecat-webhook)
 9. [Claude API Integration](#claude-api-integration)
@@ -301,6 +302,7 @@ Endpoints that require subscriber status (e.g. `POST /api/share/generate-code`) 
 | `POST /api/share/confirm-code` | None | Public endpoint |
 | `GET /api/share` | JWT + isSubscriber | Replaces polling status endpoint; share-code guests are rejected |
 | `DELETE /api/share/:shareId` | (JWT + isSubscriber) or Share Code (self only) | Guests may only revoke the code they authenticated with |
+| `GET /api/household/members` | JWT or Share Code | Owner + active confirmed guests; owner first; called by both subscribers and guests |
 | `POST /api/webhooks/revenuecat` | RevenueCat signature | Not Auth0 |
 
 ---
@@ -1051,6 +1053,65 @@ Revokes a share code. The associated guest loses list access on their next API c
 > **Future optimisation:** If this endpoint is called frequently, consider adding a secondary index or storing `shareId` alongside `code` in a lookup structure. At household scale a cross-user query is negligible.
 
 **Response `204 No Content`**
+
+---
+
+### Household
+
+#### `GET /api/household/members`
+
+Returns the full household roster for the active list — the list owner plus every guest who currently has confirmed (non-revoked) access. Used by the mobile app's "Household" screen, which is reachable by both the owner and any active share-code guest. The owner is always the first element in the response so the client can render them as the primary member without inspecting flags.
+
+**Auth:** Auth0 JWT, **or** `X-Share-Code` header. No subscriber check — share-code guests are never subscribers, and a JWT user with no shares simply gets a single-member response (themselves).
+
+**Behaviour:**
+1. Extract `userId` from the `NameIdentifier` claim. For JWT callers this is the Auth0 `sub`. For share-code guests, `ShareCodeAuthMiddleware` injects the **owner's** `userId` into this claim, so the same code path serves both auth modes — no branching is required in the controller or service.
+2. Load the owner's `UserDocument` via `UserRepository.GetByIdAsync(userId)`. Return `404 Not Found` with `{ "error": "Household owner not found." }` if the document is missing (should not happen in practice — JWT users are auto-created on first request, and share-code guests can only authenticate against an existing owner's code).
+3. Query the `ShareCodes` container for documents where `ownerUserId == userId` and `revokedAt == null`, ordered by `createdAt` ascending (the existing `ShareRepository.GetByOwnerUserIdAsync` query — it already excludes revoked codes by default).
+4. Filter to documents where `confirmed == true` (matches the guest-roster filter used by `GET /api/share`).
+5. Build the response: prepend a synthetic owner entry sourced from the owner's `UserDocument` (`displayName` = `UserDocument.DisplayName`, falling back to the literal string `"Owner"` if `DisplayName` is `null`, empty, or whitespace; `isOwner = true`, `isCurrentUser = false`, `shareId = null`, `confirmedAt = null`), then append one entry per confirmed share code (`displayName` = `ShareCodeDocument.RecipientName`, `isOwner = false`, `isCurrentUser = (authenticatedShareId != null && d.Id == authenticatedShareId)`, `shareId = ShareCodeDocument.Id`, `confirmedAt = ShareCodeDocument.ConfirmedAt`). The `authenticatedShareId` is the `ShareId` claim injected by `ShareCodeAuthMiddleware` — present only when the caller authenticated via the `X-Share-Code` header.
+6. Return `200 OK`.
+
+The `shareId` field is intentionally exposed on guest entries so a share-code guest can pass it to `DELETE /api/share/:shareId` to leave the household from the same screen. It is `null` on the owner entry — owners cannot revoke themselves.
+
+The `isCurrentUser` flag lets the client highlight the calling guest's own entry on the household screen. It is `true` only on the guest entry whose `shareId` matches the share code the caller authenticated with. JWT callers (the owner) have no share code in the request, so every member returns `isCurrentUser = false`; the owner identifies themselves via `isOwner = true`. At most one member can have `isCurrentUser = true`.
+
+**Response `200 OK`:**
+```json
+{
+  "members": [
+    {
+      "displayName": "Mike",
+      "isOwner": true,
+      "isCurrentUser": false,
+      "shareId": null,
+      "confirmedAt": null
+    },
+    {
+      "displayName": "Sarah",
+      "isOwner": false,
+      "isCurrentUser": false,
+      "shareId": "sharecode-uuid-1",
+      "confirmedAt": "2026-04-30T19:42:00Z"
+    },
+    {
+      "displayName": "Jamie",
+      "isOwner": false,
+      "isCurrentUser": true,
+      "shareId": "sharecode-uuid-2",
+      "confirmedAt": "2026-05-01T09:15:00Z"
+    }
+  ]
+}
+```
+
+**Response `404 Not Found`:**
+```json
+{
+  "error": "Household owner not found.",
+  "traceId": "..."
+}
+```
 
 ---
 

@@ -79,6 +79,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<UserService>();
         services.AddScoped<ListService>();
         services.AddScoped<ShareService>();
+        services.AddScoped<HouseholdService>();
         services.AddScoped<BlobStorageService>();
         services.AddSingleton<BlobSasTokenService>();
         services.AddSingleton<ImageFileValidator>();
