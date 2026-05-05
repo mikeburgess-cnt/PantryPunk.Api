@@ -29,7 +29,7 @@ public class ShareCodeDocument
     public DateTime? RevokedAt { get; set; }
 
     [JsonPropertyName("expiresAt")]
-    public DateTime ExpiresAt { get; set; }
+    public DateTime? ExpiresAt { get; set; }
 
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }

@@ -88,6 +88,9 @@ public class ShareService
             document.RecipientName = newName;
             document.Confirmed = true;
             document.ConfirmedAt = DateTime.UtcNow;
+            // Confirmed codes are valid indefinitely; clear ExpiresAt so duplicate-code
+            // checks and the response shape don't rely on a stale 24h timestamp.
+            document.ExpiresAt = null;
             mutated = true;
         }
         else if (!string.Equals(document.RecipientName, newName, StringComparison.Ordinal))
@@ -179,7 +182,8 @@ public class ShareService
             Code = document.Code,
             RecipientName = document.RecipientName,
             Confirmed = document.Confirmed,
-            ExpiresAt = document.ExpiresAt
+            // Generation always sets ExpiresAt; confirmed codes go through MapToListResponse instead.
+            ExpiresAt = document.ExpiresAt!.Value
         };
     }
 

@@ -86,8 +86,11 @@ public class ShareRepository
 
     public virtual async Task<bool> ActiveCodeExistsAsync(string code)
     {
+        // A code is "active" if not revoked AND either confirmed (valid indefinitely)
+        // or still inside its pre-confirm expiry window. Catches both new (null
+        // expiresAt on confirm) and legacy (stale timestamp) confirmed docs.
         var query = new QueryDefinition(
-            "SELECT VALUE COUNT(1) FROM c WHERE c.code = @code AND (NOT IS_DEFINED(c.revokedAt) OR c.revokedAt = null) AND c.expiresAt > @now")
+            "SELECT VALUE COUNT(1) FROM c WHERE c.code = @code AND (NOT IS_DEFINED(c.revokedAt) OR c.revokedAt = null) AND (c.confirmed = true OR c.expiresAt > @now)")
             .WithParameter("@code", code)
             .WithParameter("@now", DateTime.UtcNow);
 

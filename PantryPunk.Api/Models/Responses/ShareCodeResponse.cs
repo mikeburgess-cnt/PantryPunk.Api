@@ -22,6 +22,6 @@ public class ShareCodeResponse
     public string Code { get; set; } = null!;
     public bool Confirmed { get; set; }
     public DateTime? ConfirmedAt { get; set; }
-    public DateTime ExpiresAt { get; set; }
+    public DateTime? ExpiresAt { get; set; }
     public DateTime CreatedAt { get; set; }
 }
