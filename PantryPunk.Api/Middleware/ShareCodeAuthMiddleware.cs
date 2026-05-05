@@ -54,10 +54,10 @@ public class ShareCodeAuthMiddleware
 
         // All invalid states return the same response to prevent code enumeration.
         // Distinct errors (expired vs unconfirmed) would let attackers narrow the search space.
+        // ExpiresAt only applies pre-confirmation; once confirmed, the code is valid indefinitely.
         if (document == null
             || document.RevokedAt.HasValue
-            || !document.Confirmed
-            || document.ExpiresAt < DateTime.UtcNow)
+            || !document.Confirmed)
         {
             context.Response.StatusCode = 401;
             context.Response.ContentType = "application/json";

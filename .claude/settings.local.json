@@ -24,7 +24,8 @@
       "Bash(az webapp *)",
       "Bash(curl -i -s -o /tmp/health.txt -w \"HTTP %{http_code}\\\\n\" https://api.pantrypunk.ai/health)",
       "Read(//tmp/**)",
-      "Bash(curl -i -s -o - --max-time 30 https://api.pantrypunk.ai/health)"
+      "Bash(curl -i -s -o - --max-time 30 https://api.pantrypunk.ai/health)",
+      "Bash(curl *)"
     ]
   }
 }
